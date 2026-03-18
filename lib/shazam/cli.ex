@@ -1,4 +1,5 @@
 defmodule Shazam.CLI do
+  @version "0.1.0"
   @moduledoc """
   Main entry point for the `shazam` escript binary.
 
@@ -111,43 +112,50 @@ defmodule Shazam.CLI do
   # ── update ─────────────────────────────────────────────────
 
   defp cmd_update do
-    Formatter.info("Checking for updates...")
+    shazam_dir = Path.expand("~/.shazam-cli")
 
-    current = "0.1.0"
+    Formatter.info("Updating Shazam...")
+    IO.puts("")
 
-    if Code.ensure_loaded?(Mix) do
-      Formatter.info("Running in development mode. Use 'mix escript.build && mix escript.install' to update.")
+    if File.dir?(shazam_dir) do
+      IO.puts("  Fetching latest version...")
+
+      {_, 0} = System.cmd("git", ["fetch", "origin"], cd: shazam_dir, stderr_to_stdout: true)
+
+      # Check if there are updates
+      {local, 0} = System.cmd("git", ["rev-parse", "HEAD"], cd: shazam_dir)
+      {remote, 0} = System.cmd("git", ["rev-parse", "origin/main"], cd: shazam_dir)
+
+      if String.trim(local) == String.trim(remote) do
+        Formatter.success("Already up to date! (v#{@version})")
+      else
+        IO.puts("  New version available. Updating...")
+        System.cmd("git", ["reset", "--hard", "origin/main"], cd: shazam_dir, stderr_to_stdout: true)
+
+        IO.puts("  Rebuilding...")
+        build_script = Path.join(shazam_dir, "build.sh")
+
+        if File.exists?(build_script) do
+          case System.cmd("bash", [build_script], cd: shazam_dir, stderr_to_stdout: true, env: [{"PATH", "#{System.get_env("HOME")}/.cargo/bin:#{System.get_env("HOME")}/bin:#{System.get_env("PATH")}"}]) do
+            {_output, 0} ->
+              IO.puts("")
+              Formatter.success("Shazam updated successfully!")
+              Formatter.dim("Restart your shell session to use the new version.")
+
+            {output, _code} ->
+              IO.puts("")
+              Formatter.error("Build failed:")
+              IO.puts(output)
+          end
+        else
+          Formatter.error("build.sh not found at #{build_script}")
+        end
+      end
     else
-      escript_path = System.find_executable("shazam") || Path.expand("~/bin/shazam")
-
-      IO.puts([
-        "  ",
-        IO.ANSI.faint(),
-        "Current version: v#{current}",
-        IO.ANSI.reset()
-      ])
-
-      IO.puts([
-        "  ",
-        IO.ANSI.faint(),
-        "Binary: #{escript_path}",
-        IO.ANSI.reset()
-      ])
-
+      IO.puts("  Shazam was not installed via setup.sh.")
+      IO.puts("  Run the installer to set up auto-update:")
       IO.puts("")
-      Formatter.info("To update manually:")
-      IO.puts("    cd #{source_dir()} && ./build.sh")
-      IO.puts("")
-      Formatter.dim("This builds both the Elixir escript and Rust TUI binary.")
-    end
-  end
-
-  defp source_dir do
-    home_bin = Path.expand("~/bin/shazam")
-
-    cond do
-      File.exists?(home_bin) -> Path.expand("~/Projects/LiberdadeFinanceira/Clawster")
-      true -> Path.expand("~/Projects/LiberdadeFinanceira/Clawster")
+      IO.puts("  \e[36mcurl -fsSL https://raw.githubusercontent.com/raphaelbarbosaqwerty/shazam-cli/main/setup.sh | bash\e[0m")
     end
   end
 
