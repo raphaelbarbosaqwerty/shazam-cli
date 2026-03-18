@@ -1,0 +1,42 @@
+company:
+  name: MyProject
+  mission: Build an amazing product
+
+domains:
+  backend:
+    description: API and server-side logic
+    paths:
+      - lib/
+      - priv/
+  frontend:
+    description: User interface
+    paths:
+      - src/
+      - components/
+
+agents:
+  pm:
+    role: Project Manager
+    budget: 200000
+
+  senior_1:
+    role: Senior Developer
+    supervisor: pm
+    domain: backend
+    budget: 150000
+
+  senior_2:
+    role: Senior Developer
+    supervisor: pm
+    domain: frontend
+    budget: 150000
+
+# Runtime settings
+config:
+  auto_approve: false
+  auto_retry: false
+  max_concurrent: 4
+  max_retries: 2
+  poll_interval: 5000
+  module_lock: true
+  peer_reassign: true

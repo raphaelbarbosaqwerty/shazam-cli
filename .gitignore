@@ -1,0 +1,49 @@
+# Elixir build
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+
+# Compiled binaries
+/shazam
+/priv/shazam-tui
+
+# Rust build artifacts
+/shazam-tui/target/
+
+# Runtime data (local only)
+.shazam/
+*.log
+/tmp/
+
+# Claude Code local config
+.claude/settings.local.json
+.claude/projects/
+
+# Test scripts with local data
+test_company.exs
+test_quick.exs
+test_simple.exs
+
+# Skills metadata
+skills-lock.json
+
+# Nix dev environment
+.nix-mix/
+.nix-hex/
+result
+
+# Editor / IDE
+.elixir_ls/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Burrito build output
+burrito_out/

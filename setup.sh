@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="https://github.com/raphaelbarbosaqwerty/shazam-cli.git"
+INSTALL_DIR="${HOME}/bin"
+SHAZAM_DIR="${HOME}/.shazam-cli"
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+DIM='\033[2m'
+NC='\033[0m'
+
+echo ""
+echo -e "${YELLOW}⚡ Shazam — AI Agent Orchestrator${NC}"
+echo -e "${DIM}   https://shazam.dev${NC}"
+echo ""
+
+# ── Ensure cargo is in PATH ───────────────────────────────
+
+if [ -f "$HOME/.cargo/env" ]; then
+  source "$HOME/.cargo/env"
+fi
+export PATH="$HOME/.cargo/bin:$HOME/bin:$HOME/.local/bin:$PATH"
+
+# ── Clone or update ────────────────────────────────────────
+
+if [ -d "$SHAZAM_DIR" ]; then
+  echo -e "${DIM}Updating existing installation...${NC}"
+  cd "$SHAZAM_DIR"
+  git checkout main --quiet 2>/dev/null
+  git fetch origin --quiet
+  git reset --hard origin/main --quiet
+else
+  echo -e "${DIM}Cloning shazam-cli...${NC}"
+  git clone --quiet "$REPO" "$SHAZAM_DIR"
+  cd "$SHAZAM_DIR"
+fi
+
+echo ""
+
+# ── Detect build strategy ─────────────────────────────────
+
+USE_NIX=false
+
+if command -v nix &> /dev/null; then
+  USE_NIX=true
+  echo -e "${GREEN}✓${NC} Nix detected — using Nix for all dependencies"
+else
+  echo -e "${DIM}Nix not found — checking manual dependencies...${NC}"
+  echo ""
+
+  check_cmd() {
+    if ! command -v "$1" &> /dev/null; then
+      echo -e "${RED}✗ $1 not found.${NC} $2"
+      return 1
+    else
+      echo -e "${GREEN}✓${NC} $1 found"
+      return 0
+    fi
+  }
+
+  MISSING=0
+  check_cmd "elixir" "Install: https://elixir-lang.org/install.html" || MISSING=1
+  check_cmd "cargo" "Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" || MISSING=1
+  check_cmd "claude" "Install: https://docs.anthropic.com/en/docs/claude-code" || MISSING=1
+
+  if [ "$MISSING" -eq 1 ]; then
+    echo ""
+    echo -e "${YELLOW}Tip:${NC} Install Nix to skip manual dependency setup:"
+    echo -e "  ${DIM}curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh${NC}"
+    echo ""
+    echo -e "${RED}Please install missing dependencies and run again.${NC}"
+    exit 1
+  fi
+fi
+
+echo ""
+
+# ── Build ──────────────────────────────────────────────────
+
+if [ "$USE_NIX" = true ]; then
+  echo -e "  Building with Nix..."
+  nix develop --command bash -c "./build.sh"
+else
+  # Manual build
+  echo "  [1/3] Installing Elixir dependencies..."
+  mix local.hex --force --if-missing > /dev/null 2>&1
+  mix local.rebar --force --if-missing > /dev/null 2>&1
+  mix deps.get --quiet 2>&1
+
+  echo "  [2/3] Building Rust TUI..."
+  cd shazam-tui
+  if ! cargo build --release 2>&1; then
+    echo -e "        ${RED}✗ Rust TUI build failed${NC}"
+    exit 1
+  fi
+  cd ..
+  echo -e "        ${GREEN}✓${NC} shazam-tui built"
+
+  echo "  [3/3] Building Elixir escript..."
+  mix escript.build 2>&1 | head -5
+  echo -e "        ${GREEN}✓${NC} shazam built"
+
+  # Install
+  echo ""
+  mkdir -p "$INSTALL_DIR"
+
+  cp shazam "$INSTALL_DIR/shazam"
+  chmod +x "$INSTALL_DIR/shazam"
+
+  cp "shazam-tui/target/release/shazam-tui" "$INSTALL_DIR/shazam-tui"
+  chmod +x "$INSTALL_DIR/shazam-tui"
+
+  # Create 'shz' alias (avoids conflict with macOS ShazamKit)
+  ln -sf "$INSTALL_DIR/shazam" "$INSTALL_DIR/shz"
+fi
+
+# ── PATH check ─────────────────────────────────────────────
+
+echo ""
+if echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
+  echo -e "${GREEN}✓${NC} ${INSTALL_DIR} is in your PATH"
+else
+  echo -e "${YELLOW}!${NC} Add this to your shell profile (~/.zshrc or ~/.bashrc):"
+  echo ""
+  echo -e "    export PATH=\"\$HOME/bin:\$PATH\""
+  echo ""
+fi
+
+echo -e "${GREEN}⚡ Shazam installed successfully!${NC}"
+echo ""
+echo "  Get started:"
+echo -e "    ${YELLOW}shazam init${NC}      Create a shazam.yaml config"
+echo -e "    ${YELLOW}shazam shell${NC}     Open the interactive TUI"
+echo ""
+echo -e "  ${DIM}On macOS, if 'shazam' conflicts with Apple ShazamKit, use 'shz' instead:${NC}"
+echo -e "    ${YELLOW}shz init${NC}         Same as shazam init"
+echo -e "    ${YELLOW}shz shell${NC}        Same as shazam shell"
+echo ""

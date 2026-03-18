@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  MIX_ENV: prod
+  ELIXIR_VERSION: "1.16.3"
+  OTP_VERSION: "26.2.5"
+  RUST_TOOLCHAIN: "stable"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os_name }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            os_name: macos
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+          - runner: macos-13
+            os_name: macos
+            arch: x86_64
+            rust_target: x86_64-apple-darwin
+          - runner: ubuntu-latest
+            os_name: linux
+            arch: x86_64
+            rust_target: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Erlang & Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache Mix deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ matrix.runner }}-${{ hashFiles('mix.lock') }}
+          restore-keys: mix-${{ matrix.runner }}-
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shazam-tui/target
+          key: cargo-${{ matrix.runner }}-${{ hashFiles('shazam-tui/Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.runner }}-
+
+      - name: Install Elixir dependencies
+        run: mix deps.get
+
+      - name: Build Elixir escript
+        run: mix escript.build
+
+      - name: Build Rust TUI
+        working-directory: shazam-tui
+        run: cargo build --release --target ${{ matrix.rust_target }}
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create install script for tarball
+        run: |
+          cat > install.sh << 'SCRIPT'
+          #!/usr/bin/env sh
+          set -e
+
+          INSTALL_DIR="${HOME}/.local/bin"
+          if [ ! -d "$INSTALL_DIR" ]; then
+            INSTALL_DIR="${HOME}/bin"
+          fi
+          mkdir -p "$INSTALL_DIR"
+
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+          cp "$SCRIPT_DIR/shazam" "$INSTALL_DIR/shazam"
+          cp "$SCRIPT_DIR/shazam-tui" "$INSTALL_DIR/shazam-tui"
+          chmod +x "$INSTALL_DIR/shazam" "$INSTALL_DIR/shazam-tui"
+
+          echo ""
+          echo "Shazam installed to $INSTALL_DIR"
+          echo ""
+          echo "Make sure $INSTALL_DIR is in your PATH:"
+          echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
+          echo ""
+          echo "Run 'shazam' to get started."
+          SCRIPT
+          chmod +x install.sh
+
+      - name: Package tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          TARBALL="shazam-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.tar.gz"
+          mkdir -p staging
+          cp shazam staging/
+          cp shazam-tui/target/${{ matrix.rust_target }}/release/shazam-tui staging/
+          cp install.sh staging/
+          cd staging
+          tar czf "../${TARBALL}" shazam shazam-tui install.sh
+          cd ..
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shazam-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: ${{ env.TARBALL }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/*.tar.gz
