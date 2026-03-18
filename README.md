@@ -193,6 +193,14 @@ curl -fsSL https://raw.githubusercontent.com/raphaelbarbosaqwerty/shazam-cli/mai
 > shz shell
 > ```
 
+### Updating
+
+```bash
+shazam update
+```
+
+This fetches the latest version, rebuilds, and installs automatically. No manual steps needed.
+
 ---
 
 ## Quick Start
@@ -381,7 +389,7 @@ USAGE: shazam <command> [options]
 | `apply` | Apply YAML config changes to running system | `-f/--file`, `-p/--port` |
 | `dashboard` | Interactive TUI dashboard | `-c/--company`, `-p/--port` |
 | `version` | Show version | — |
-| `update` | Check for updates | — |
+| `update` | Auto-update to latest version (fetch + rebuild + install) | — |
 | `help` | Show help | — |
 
 ### Examples
