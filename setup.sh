@@ -80,7 +80,7 @@ echo ""
 
 if [ "$USE_NIX" = true ]; then
   echo -e "  Building with Nix..."
-  nix develop --command bash -c "./build.sh"
+  nix develop --extra-experimental-features "nix-command flakes" --command bash -c "./build.sh"
 else
   # Manual build
   echo "  [1/3] Installing Elixir dependencies..."
