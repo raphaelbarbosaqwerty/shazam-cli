@@ -1015,6 +1015,14 @@ fn draw_help_overlay(f: &mut Frame, area: Rect, state: &AppState) {
             Span::raw("Show system status"),
         ]),
         Line::from(vec![
+            Span::styled("  /search ", Style::default().fg(Color::Cyan)),
+            Span::raw("Search tasks by title"),
+        ]),
+        Line::from(vec![
+            Span::styled("  /export ", Style::default().fg(Color::Cyan)),
+            Span::raw("Export tasks to markdown"),
+        ]),
+        Line::from(vec![
             Span::styled("  /clear ", Style::default().fg(Color::Cyan)),
             Span::raw("Clear events"),
         ]),

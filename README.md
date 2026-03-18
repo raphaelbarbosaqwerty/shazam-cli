@@ -71,6 +71,11 @@ You (CEO) ──> describe task in natural language
 | **Human-in-the-loop** | PM subtasks require approval before execution |
 | **Real-time events** | Live feed of agent activity with scrollbar and mouse support |
 | **REST API** | HTTP endpoints + WebSocket for external integrations |
+| **Task search** | `/search` filters tasks by title in real-time |
+| **Export to markdown** | `/export` saves all tasks and results to a .md file |
+| **Persistent history** | Command history saved across sessions |
+| **Multi-project** | Each project directory gets isolated tasks, agents, and metrics |
+| **Task detail view** | Select a task in `/tasks` to see full result output |
 
 ---
 
@@ -428,11 +433,13 @@ When running `shazam shell`, the following `/commands` are available:
 | `/kill-task <id>` | Kill running task |
 | `/retry-task <id>` | Retry failed task |
 | `/delete-task <id>` | Delete a task |
+| `/search <query>` | Search tasks by title |
+| `/export [file]` | Export tasks to markdown file |
 | `/clear` | Clear scroll region |
 | `/help` | Show help |
 | `/quit` | Exit Shazam |
 
-**Keyboard shortcuts:** `↑/↓` command history, `Tab` accept ghost text, `PgUp/PgDn` or mouse scroll events, `Enter` open action menu in `/tasks`, `Ctrl+C` exit, `ESC` close overlay.
+**Keyboard shortcuts:** `↑/↓` command history, `Tab` accept ghost text, `PgUp/PgDn` or mouse scroll events, `Enter` open action menu in `/tasks`, `Ctrl+C` exit, `ESC` close overlay. Command history is saved across sessions (`~/.shazam/tui_history`).
 
 ---
 
