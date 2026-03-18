@@ -30,6 +30,23 @@ defmodule Shazam.CLI.YamlParser do
 
       tech_stack = build_tech_stack(data["tech_stack"])
 
+      # backend: under company: (preferred) or root-level backend: (common mistake)
+      backend =
+        parse_backend(company["backend"]) ||
+          parse_backend(data["backend"])
+
+      fallback_backend = parse_backend(company["fallback_backend"])
+
+      cursor_cli_bin =
+        case company["cursor_cli_bin"] do
+          b when is_binary(b) ->
+            t = String.trim(b)
+            if t != "", do: t, else: nil
+
+          _ ->
+            nil
+        end
+
       {:ok, %{
         name: name,
         mission: mission,
@@ -37,7 +54,10 @@ defmodule Shazam.CLI.YamlParser do
         domain_config: domain_config,
         workspace: company["workspace"],
         ralph_config: ralph_config,
-        tech_stack: tech_stack
+        tech_stack: tech_stack,
+        backend: backend,
+        fallback_backend: fallback_backend,
+        cursor_cli_bin: cursor_cli_bin
       }}
     else
       {:error, _} = err -> err
@@ -176,7 +196,26 @@ defmodule Shazam.CLI.YamlParser do
 
   @doc "Generates a YAML string from a config map."
   def to_yaml(config) do
-    company = "company:\n  name: #{quote_str(config.name)}\n  mission: #{quote_str(config.mission)}\n"
+    backend_line = if config[:backend] && config[:backend] != :claude_code do
+      "\n  backend: #{config.backend}"
+    else
+      ""
+    end
+
+    fallback_line = if config[:fallback_backend] do
+      "\n  fallback_backend: #{config.fallback_backend}"
+    else
+      ""
+    end
+
+    cursor_bin_line =
+      if config[:cursor_cli_bin] && config[:cursor_cli_bin] != "" do
+        "\n  cursor_cli_bin: #{quote_str(config.cursor_cli_bin)}"
+      else
+        ""
+      end
+
+    company = "company:\n  name: #{quote_str(config.name)}\n  mission: #{quote_str(config.mission)}#{backend_line}#{fallback_line}#{cursor_bin_line}\n"
 
     domains = if config[:domains] && map_size(config.domains) > 0 do
       domain_lines = config.domains
@@ -268,6 +307,26 @@ defmodule Shazam.CLI.YamlParser do
     end
   end
   defp quote_str(s), do: to_string(s)
+
+  @valid_backends ~w(claude_code cursor_cli)
+  @backend_aliases %{"cursor" => :cursor_cli}
+
+  defp parse_backend(nil), do: nil
+  defp parse_backend(str) when is_binary(str) do
+    normalized = str |> String.downcase() |> String.replace("-", "_") |> String.replace(" ", "_")
+
+    cond do
+      normalized in @valid_backends ->
+        String.to_atom(normalized)
+
+      Map.has_key?(@backend_aliases, normalized) ->
+        Map.fetch!(@backend_aliases, normalized)
+
+      true ->
+        nil
+    end
+  end
+  defp parse_backend(_), do: nil
 
   defp default_yaml do
     if File.exists?(".shazam/shazam.yaml"), do: ".shazam/shazam.yaml", else: "shazam.yaml"

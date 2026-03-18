@@ -6,6 +6,10 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   def send_json(port, data) do
     json = Jason.encode!(data)
     Port.command(port, json <> "\n")
+  rescue
+    ArgumentError -> :port_closed
+  catch
+    _, _ -> :port_closed
   end
 
   def send_event(port, agent, event_type, title) do
@@ -61,38 +65,41 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   @tui_binary "shazam-tui"
 
   def find_tui_binary do
-    # 1. Next to the running executable (Burrito standalone or escript)
+    # 1. Next to the escript that is actually running (not macOS /usr/bin/shazam)
     self_dir = case :init.get_argument(:progname) do
       {:ok, [[progname]]} -> Path.dirname(to_string(progname))
       _ -> nil
     end
-    # Also check next to System argv0
-    argv0_dir = case System.argv() do
-      _ ->
-        case System.find_executable("shazam") do
-          nil -> self_dir
-          path -> Path.dirname(path)
-        end
+
+    argv0_dir = case System.find_executable("shazam") do
+      nil -> self_dir
+      path ->
+        dir = Path.dirname(path)
+        # Skip macOS system ShazamKit at /usr/bin/shazam
+        if dir == "/usr/bin", do: self_dir, else: dir
     end
 
     sibling_path = if argv0_dir, do: Path.join(argv0_dir, @tui_binary)
 
-    # 2. Check priv/ in the OTP release
+    # 2. Check ~/bin (default install location from build.sh)
+    home_bin_path = Path.expand("~/bin/#{@tui_binary}")
+
+    # 3. Check priv/ in the OTP release
     priv_path = case :code.priv_dir(:shazam) do
       {:error, _} -> nil
       dir -> Path.join(to_string(dir), @tui_binary)
     end
 
-    # 3. Check relative to project (dev mode)
+    # 4. Check relative to project (dev mode)
     project_path = Path.join(["priv", @tui_binary])
 
-    # 4. Check shazam-tui/target/release (dev build)
+    # 5. Check shazam-tui/target/release (dev build)
     dev_build_path = Path.join(["shazam-tui", "target", "release", @tui_binary])
 
-    # 5. Check in PATH
+    # 6. Check in PATH
     system_path = System.find_executable(@tui_binary)
 
-    # 6. Check next to Burrito cache (extracted release)
+    # 7. Check next to Burrito cache (extracted release)
     burrito_path = case System.get_env("BURRITO_CACHE_DIR") do
       nil -> nil
       dir -> Path.join(dir, @tui_binary)
@@ -100,6 +107,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
     cond do
       sibling_path && File.exists?(sibling_path) -> sibling_path
+      File.exists?(home_bin_path) -> home_bin_path
       priv_path && File.exists?(priv_path) -> priv_path
       burrito_path && File.exists?(burrito_path) -> burrito_path
       File.exists?(project_path) -> Path.expand(project_path)

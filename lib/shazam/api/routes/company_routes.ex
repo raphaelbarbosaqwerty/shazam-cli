@@ -196,18 +196,36 @@ defmodule Shazam.API.Routes.CompanyRoutes do
   end
 
   post "/:name/tasks" do
-    %{"title" => title} = conn.body_params
-    description = conn.body_params["description"]
-    to = conn.body_params["assigned_to"]
-    depends_on = conn.body_params["depends_on"]
+    title = conn.body_params["title"]
 
-    case Shazam.assign(name, title, description: description, to: to, depends_on: depends_on) do
-      {:ok, task} ->
-        Shazam.API.EventBus.broadcast(%{event: "task_created", task: serialize_task(task)})
-        json(conn, 201, serialize_task(task))
+    if !is_binary(title) or String.trim(title) == "" do
+      json(conn, 400, %{error: "JSON body must include a non-empty \"title\" string"})
+    else
+      description = conn.body_params["description"]
+      to = conn.body_params["assigned_to"]
+      depends_on = conn.body_params["depends_on"]
 
-      {:error, reason} ->
-        json(conn, 422, %{error: inspect(reason)})
+      case Registry.lookup(Shazam.CompanyRegistry, name) do
+        [] ->
+          json(conn, 503, %{
+            error:
+              "Company '#{name}' is not running. Run `shazam start` in this project (same shazam.yaml company name)."
+          })
+
+        _ ->
+          case Shazam.assign(name, String.trim(title),
+                 description: description,
+                 to: to,
+                 depends_on: depends_on
+               ) do
+            {:ok, task} ->
+              Shazam.API.EventBus.broadcast(%{event: "task_created", task: serialize_task(task)})
+              json(conn, 201, serialize_task(task))
+
+            {:error, reason} ->
+              json(conn, 422, %{error: inspect(reason)})
+          end
+      end
     end
   end
 

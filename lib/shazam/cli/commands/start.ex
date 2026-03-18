@@ -12,8 +12,8 @@ defmodule Shazam.CLI.Commands.Start do
   def run(args) do
     {opts, _, _} =
       OptionParser.parse(args,
-        switches: [port: :integer, no_resume: :boolean, file: :string],
-        aliases: [p: :port, f: :file]
+        switches: [port: :integer, no_resume: :boolean, file: :string, backend: :string],
+        aliases: [p: :port, f: :file, b: :backend]
       )
 
     yaml_file = opts[:file] || Shared.default_yaml()
@@ -34,12 +34,44 @@ defmodule Shazam.CLI.Commands.Start do
     port = opts[:port] || @port
     Application.put_env(:shazam, :port, port)
 
+    # Set backend: CLI flag > YAML > env var > default
+    backend_key = cond do
+      opts[:backend] -> opts[:backend] |> String.to_atom()
+      config[:backend] -> config[:backend]
+      true -> Application.get_env(:shazam, :backend, :claude_code)
+    end
+    Application.put_env(:shazam, :backend, backend_key)
+
+    if config[:fallback_backend] do
+      Application.put_env(:shazam, :fallback_backend, config.fallback_backend)
+    end
+
+    if config[:cursor_cli_bin] do
+      Application.put_env(:shazam, :cursor_cli_bin, config.cursor_cli_bin)
+    end
+
+    backend = Shazam.Backend.Registry.resolve(backend_key)
+
+    # Validate backend is available
+    unless backend.available?() do
+      Formatter.error("Backend '#{backend.name()}' selected but CLI not found in PATH")
+      Formatter.dim("Install #{backend.name()} or change 'backend' in shazam.yaml")
+      System.halt(1)
+    end
+
     # Boot OTP app — suppress noisy NIF/SQLite warnings
     :logger.set_primary_config(:level, :error)
     Logger.configure(level: :error)
     Shared.boot_app()
     Logger.configure(level: :info)
     :logger.set_primary_config(:level, :info)
+
+    Formatter.info("Backend: #{backend.name()} #{backend.cli_version() || ""}")
+
+    if backend_key == :cursor_cli do
+      bin = Application.get_env(:shazam, :cursor_cli_bin, "agent")
+      Formatter.dim("Cursor headless: https://cursor.com/docs/cli/headless — `#{bin} -p --force` · auth: agent login or CURSOR_API_KEY")
+    end
 
     Formatter.info("Server running on port #{port}")
 

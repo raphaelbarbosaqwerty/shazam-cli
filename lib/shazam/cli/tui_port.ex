@@ -112,7 +112,17 @@ defmodule Shazam.CLI.TuiPort do
   # ── Handle messages FROM Rust TUI ────────────────────────────
 
   defp handle_tui_message(%{"type" => "command", "raw" => raw}, state) do
-    Commands.handle_command(String.trim(raw), state)
+    try do
+      Commands.handle_command(String.trim(raw), state)
+    rescue
+      e ->
+        Helpers.send_event(state.port, "system", "error", "Command crashed: #{Exception.message(e)}")
+        state
+    catch
+      kind, reason ->
+        Helpers.send_event(state.port, "system", "error", "Command failed: #{inspect({kind, reason}, limit: 200)}")
+        state
+    end
   end
 
   defp handle_tui_message(%{"type" => "paste", "content" => content, "line_count" => count}, state) do

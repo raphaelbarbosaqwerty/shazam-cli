@@ -68,6 +68,15 @@ defmodule Shazam.CLI.Repl do
     # Fresh start: clear old tasks and companies from previous projects
     clear_previous_session(company_name)
 
+    # Set backend from YAML
+    backend_key = config[:backend] || Application.get_env(:shazam, :backend, :claude_code)
+    Application.put_env(:shazam, :backend, backend_key)
+    if config[:fallback_backend], do: Application.put_env(:shazam, :fallback_backend, config.fallback_backend)
+
+    if config[:cursor_cli_bin] do
+      Application.put_env(:shazam, :cursor_cli_bin, config.cursor_cli_bin)
+    end
+
     # Set workspace
     workspace = config[:workspace] || File.cwd!()
     Application.put_env(:shazam, :workspace, workspace)
@@ -78,7 +87,8 @@ defmodule Shazam.CLI.Repl do
 
     # Initialize file logger
     Shazam.FileLogger.init()
-    Shazam.FileLogger.info("REPL started | company=#{company_name} workspace=#{workspace}")
+    backend = Shazam.Backend.Registry.current()
+    Shazam.FileLogger.info("REPL started | company=#{company_name} workspace=#{workspace} backend=#{backend.name()}")
 
     # Require Rust TUI — no fallback
     if Shazam.CLI.TuiPort.available?() do

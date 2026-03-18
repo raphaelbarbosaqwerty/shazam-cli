@@ -43,8 +43,14 @@ echo "  [2/3] Building Elixir escript (shazam)..."
 cd "${PROJECT_DIR}"
 mix local.hex --force --if-missing > /dev/null 2>&1
 mix local.rebar --force --if-missing > /dev/null 2>&1
-mix deps.get --quiet 2>&1
-mix escript.build 2>&1
+if ! mix deps.get --quiet 2>&1; then
+  echo "  ERROR: mix deps.get failed"
+  exit 1
+fi
+if ! mix escript.build 2>&1; then
+  echo "  ERROR: mix escript.build failed"
+  exit 1
+fi
 echo "        ✓ shazam escript built"
 
 # ── Step 3: Install to ~/bin ───────────────────────────────
@@ -63,4 +69,16 @@ ln -sf "${INSTALL_DIR}/shazam" "${INSTALL_DIR}/shz"
 echo "        ✓ shazam    → ${INSTALL_DIR}/shazam"
 echo "        ✓ shz       → ${INSTALL_DIR}/shz (alias)"
 echo ""
+# Warn if ~/bin is not in PATH
+if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/bin"; then
+  echo "  ⚠️  ${INSTALL_DIR} is not in your PATH!"
+  echo ""
+  echo "  Add this to your shell profile (~/.zshrc or ~/.bashrc):"
+  echo ""
+  echo "    export PATH=\"\$HOME/bin:\$PATH\""
+  echo ""
+  echo "  Then restart your terminal or run: source ~/.zshrc"
+  echo ""
+fi
+
 echo "  ⚡ Done! Run 'shazam shell' or 'shz shell' to start."

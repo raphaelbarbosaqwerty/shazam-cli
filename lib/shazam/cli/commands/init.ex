@@ -26,6 +26,28 @@ defmodule Shazam.CLI.Commands.Init do
     name = prompt("Company name", Path.basename(File.cwd!()))
     mission = prompt("Mission", "Build great software")
 
+    # Backend selection
+    IO.puts("")
+    Formatter.info("Choose AI backend:")
+    IO.puts("")
+
+    available = Shazam.Backend.Registry.detect_available()
+    claude_available = Enum.any?(available, &(&1.key == :claude_code))
+    cursor_available = Enum.any?(available, &(&1.key == :cursor_cli))
+
+    claude_label = if claude_available, do: "Claude Code  ✓ detected", else: "Claude Code"
+    cursor_label = if cursor_available, do: "Cursor CLI   ✓ detected", else: "Cursor CLI"
+
+    IO.puts("  1) #{claude_label}")
+    IO.puts("  2) #{cursor_label}")
+    IO.puts("")
+
+    backend_choice = prompt("Backend", "1")
+    backend = case backend_choice do
+      "2" -> :cursor_cli
+      _ -> :claude_code
+    end
+
     IO.puts("")
     Formatter.info("Choose a team template:")
     IO.puts("")
@@ -48,7 +70,7 @@ defmodule Shazam.CLI.Commands.Init do
 
     domains = detect_domains()
 
-    config = %{name: name, mission: mission, agents: agents, domains: domains}
+    config = %{name: name, mission: mission, agents: agents, domains: domains, backend: backend}
     yaml = Shazam.CLI.YamlParser.to_yaml(config)
     File.mkdir_p!(config_dir)
     File.write!(config_file, yaml)

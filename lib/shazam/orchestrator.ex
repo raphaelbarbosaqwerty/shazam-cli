@@ -1,9 +1,12 @@
 defmodule Shazam.Orchestrator do
   @moduledoc """
-  Coordinates the execution of multiple Claude agents in parallel or in pipeline.
+  Coordinates the execution of multiple AI agents in parallel or in pipeline.
+  Backend-agnostic — delegates to the active backend via Shazam.Backend.Registry.
   """
 
   require Logger
+
+  alias Shazam.Backend.{Registry, EventNormalizer}
 
   @default_timeout 300_000
   @default_system_prompt "You are a specialized assistant. Be direct and objective."
@@ -11,9 +14,9 @@ defmodule Shazam.Orchestrator do
   @default_codex_fallback_timeout_ms 1_800_000
   @default_codex_progress_interval_ms 15_000
 
-  @doc """
-  Executes agents in parallel (fan-out) and collects results (fan-in).
-  """
+  @broadcast_batch_chars 200
+
+  @doc "Executes agents in parallel (fan-out) and collects results (fan-in)."
   def run(agents, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     max_concurrency = Keyword.get(opts, :max_concurrency, System.schedulers_online())
@@ -37,10 +40,7 @@ defmodule Shazam.Orchestrator do
     aggregate_results(agents, results)
   end
 
-  @doc """
-  Executes agents sequentially in pipeline.
-  The output of each agent feeds into the prompt of the next.
-  """
+  @doc "Executes agents sequentially in pipeline."
   def pipeline(agents, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     stream? = Keyword.get(opts, :stream, false)
@@ -66,92 +66,19 @@ defmodule Shazam.Orchestrator do
       end
     end)
     |> then(fn {final_output, history} ->
-      %{
-        final_output: final_output,
-        history: history
-      }
+      %{final_output: final_output, history: history}
     end)
-  end
-
-  defp execute_agent(agent, stream?, timeout) do
-    name = agent[:name] || "agent"
-    prompt = agent[:prompt]
-    system_prompt = agent[:system_prompt] || @default_system_prompt
-    tools = agent[:tools] || []
-    model = agent[:model]
-    fallback_model = resolve_fallback_model(agent)
-    modules = agent[:modules] || []
-
-    workspace = Application.get_env(:shazam, :workspace, nil)
-
-    # Resolve module paths relative to workspace
-    module_dirs =
-      if workspace && modules != [] do
-        modules
-        |> Enum.map(fn m -> Path.join(workspace, m["path"] || "") end)
-        |> Enum.filter(&File.dir?/1)
-      else
-        []
-      end
-
-    session_opts =
-      [
-        system_prompt: system_prompt,
-        timeout: timeout,
-        permission_mode: :bypass_permissions,
-        setting_sources: ["user", "project"],
-        env: %{"CLAUDECODE" => ""}
-      ]
-      |> maybe_add(:allowed_tools, if(tools != [], do: tools ++ ["Skill"], else: nil), tools != [])
-      |> maybe_add(:model, model, model != nil)
-      |> maybe_add(:cwd, workspace, workspace != nil)
-      |> maybe_add(:add_dir, module_dirs, module_dirs != [])
-
-    Logger.info("[#{name}] Starting session...")
-
-    case execute_claude(session_opts, stream?, name, prompt) do
-      {:error, reason} = error ->
-        maybe_fallback_to_codex(error, reason, name, prompt, system_prompt, fallback_model, timeout)
-
-      result ->
-        result
-    end
-  end
-
-  defp execute_claude(session_opts, stream?, name, prompt) do
-    with {:ok, session} <- start_session(session_opts) do
-      try do
-        result =
-          if stream? do
-            execute_stream(session, name, prompt)
-          else
-            execute_query(session, prompt, name)
-          end
-
-        ClaudeCode.stop(session)
-
-        # Normalize result to include touched_files
-        case result do
-          {:ok, text, files} -> {:ok, text, files}
-          {:ok, text} -> {:ok, text, []}
-          other -> other
-        end
-      rescue
-        e ->
-          ClaudeCode.stop(session)
-          Logger.error("[#{name}] Error: #{inspect(e)}")
-          {:error, e}
-      end
-    end
   end
 
   @doc """
   Executes a query on an existing session (from SessionPool).
   Does NOT create or destroy the session — the pool manages its lifecycle.
   """
-  def execute_on_session(session_pid, agent_name, prompt) do
+  def execute_on_session(session, agent_name, prompt) do
+    backend = Registry.current()
+
     try do
-      result = execute_query(session_pid, prompt, agent_name)
+      result = execute_query_on_backend(backend, session, prompt, agent_name)
 
       case result do
         {:ok, text, files} -> {:ok, text, files}
@@ -164,7 +91,210 @@ defmodule Shazam.Orchestrator do
     end
   end
 
-  defp maybe_fallback_to_codex(error, reason, name, prompt, system_prompt, fallback_model, timeout) do
+  # --- Private: Agent Execution ---
+
+  defp execute_agent(agent, stream?, timeout) do
+    backend = Registry.current()
+    name = agent[:name] || "agent"
+    prompt = agent[:prompt]
+    system_prompt = agent[:system_prompt] || @default_system_prompt
+    tools = agent[:tools] || []
+    model = agent[:model]
+    fallback_model = resolve_fallback_model(agent)
+    modules = agent[:modules] || []
+
+    workspace = Application.get_env(:shazam, :workspace, nil)
+
+    module_dirs =
+      if workspace && modules != [] do
+        modules
+        |> Enum.map(fn m -> Path.join(workspace, m["path"] || "") end)
+        |> Enum.filter(&File.dir?/1)
+      else
+        []
+      end
+
+    config = %{
+      system_prompt: system_prompt,
+      timeout: timeout,
+      cwd: workspace,
+      model: model,
+      tools: tools,
+      module_dirs: module_dirs
+    }
+
+    session_opts = backend.build_session_opts(config)
+
+    Logger.info("[#{name}] Starting session on #{backend.name()}...")
+
+    case execute_on_backend(backend, session_opts, stream?, name, prompt) do
+      {:error, reason} = error ->
+        maybe_fallback(error, reason, name, prompt, system_prompt, fallback_model, timeout)
+      result ->
+        result
+    end
+  end
+
+  defp execute_on_backend(backend, session_opts, stream?, name, prompt) do
+    with {:ok, session} <- backend.start_session(session_opts) do
+      try do
+        result =
+          if stream? do
+            execute_stream_on_backend(backend, session, name, prompt)
+          else
+            execute_query_on_backend(backend, session, prompt, name)
+          end
+
+        backend.stop_session(session)
+
+        case result do
+          {:ok, text, files} -> {:ok, text, files}
+          {:ok, text} -> {:ok, text, []}
+          other -> other
+        end
+      rescue
+        e ->
+          backend.stop_session(session)
+          Logger.error("[#{name}] Error: #{inspect(e)}")
+          {:error, e}
+      end
+    end
+  end
+
+  defp execute_query_on_backend(backend, session, prompt, agent_name) do
+    if backend == Shazam.Backend.ClaudeCode do
+      execute_claude_query(session, prompt, agent_name)
+    else
+      result = backend.send_query(session, prompt)
+
+      case result do
+        {:ok, text, files} ->
+          notify_agent_result(agent_name, "Completed")
+          {:ok, text, files}
+        {:error, _} = err ->
+          err
+      end
+    end
+  end
+
+  # ClaudeCode-specific query with streaming events and broadcasting
+  defp execute_claude_query(session, prompt, agent_name) do
+    touched_files = :ets.new(:touched_files, [:set, :private])
+    Process.put(:text_delta_buffer, "")
+
+    stream = ClaudeCode.stream(session, prompt, include_partial_messages: true)
+
+    stream =
+      if agent_name do
+        stream
+        |> ClaudeCode.Stream.tap(fn message ->
+          broadcast_backend_event(agent_name, message)
+          collect_touched_files_claude(message, touched_files)
+        end)
+      else
+        stream
+      end
+
+    result = ClaudeCode.Stream.final_result(stream)
+
+    flush_text_buffer(agent_name)
+
+    files = :ets.tab2list(touched_files) |> Enum.map(fn {path} -> path end)
+    :ets.delete(touched_files)
+
+    case result do
+      %{is_error: true} = err -> {:error, err}
+      %{result: text} -> {:ok, text, files}
+      nil -> {:error, :no_result}
+    end
+  end
+
+  defp execute_stream_on_backend(backend, session, name, prompt) do
+    if backend == Shazam.Backend.ClaudeCode do
+      execute_claude_stream(session, name, prompt)
+    else
+      execute_generic_stream(backend, session, name, prompt)
+    end
+  end
+
+  defp execute_claude_stream(session, name, prompt) do
+    IO.puts("\n--- [#{name}] ---")
+
+    text =
+      session
+      |> ClaudeCode.stream(prompt)
+      |> ClaudeCode.Stream.text_content()
+      |> Enum.map(fn chunk ->
+        IO.write(chunk)
+        chunk
+      end)
+      |> Enum.join()
+
+    IO.puts("\n--- [/#{name}] ---\n")
+    {:ok, text}
+  end
+
+  defp execute_generic_stream(backend, session, name, prompt) do
+    IO.puts("\n--- [#{name}] ---")
+
+    {text, files} =
+      backend.stream(session, prompt, [])
+      |> Enum.reduce({"", []}, fn event, {text_acc, files_acc} ->
+        case event do
+          {:text_delta, chunk} ->
+            IO.write(chunk)
+            {text_acc <> chunk, files_acc}
+
+          {:tool_use, tool, input} ->
+            new_files = EventNormalizer.extract_touched_file({:tool_use, tool, input})
+            {text_acc, files_acc ++ new_files}
+
+          {:result_ok, result_text} ->
+            {result_text, files_acc}
+
+          _ ->
+            {text_acc, files_acc}
+        end
+      end)
+
+    IO.puts("\n--- [/#{name}] ---\n")
+    {:ok, text, files}
+  end
+
+  # --- Fallback Logic ---
+
+  defp maybe_fallback(error, reason, name, prompt, system_prompt, fallback_model, timeout) do
+    fallback_backend = Registry.fallback()
+
+    cond do
+      # Try cross-backend fallback first
+      fallback_backend != nil and rate_limit_or_quota_error?(reason) ->
+        Logger.warning("[#{name}] Primary backend limit reached, trying #{fallback_backend.name()} fallback")
+        notify_agent_result(name, "Primary backend limit reached. Trying #{fallback_backend.name()} fallback...")
+
+        config = %{
+          system_prompt: system_prompt,
+          timeout: timeout,
+          cwd: Application.get_env(:shazam, :workspace, nil),
+          model: nil
+        }
+        session_opts = fallback_backend.build_session_opts(config)
+
+        case execute_on_backend(fallback_backend, session_opts, false, name, prompt) do
+          {:ok, _text, _files} = ok ->
+            notify_agent_result(name, "Completed via #{fallback_backend.name()} fallback")
+            ok
+          {:error, _} ->
+            maybe_codex_fallback(error, reason, name, prompt, system_prompt, fallback_model, timeout)
+        end
+
+      # Then try Codex fallback
+      true ->
+        maybe_codex_fallback(error, reason, name, prompt, system_prompt, fallback_model, timeout)
+    end
+  end
+
+  defp maybe_codex_fallback(error, reason, name, prompt, system_prompt, fallback_model, timeout) do
     cond do
       !codex_fallback_enabled?() ->
         error
@@ -180,15 +310,12 @@ defmodule Shazam.Orchestrator do
         notify_agent_result(name, "Claude limit reached. Trying Codex fallback...")
         notify_agent_progress(name, "Codex fallback started (timeout: #{div(fallback_timeout, 60_000)} min)")
 
-        Logger.warning(
-          "[#{name}] Claude limit/quota detected. Falling back to Codex model '#{fallback_model}'"
-        )
+        Logger.warning("[#{name}] Claude limit/quota detected. Falling back to Codex model '#{fallback_model}'")
 
         case execute_codex_fallback(name, prompt, system_prompt, fallback_model, fallback_timeout) do
           {:ok, _text, _files} = ok ->
             notify_agent_result(name, "Completed via Codex fallback")
             ok
-
           {:error, fallback_reason} ->
             notify_agent_result(name, "Codex fallback failed")
             {:error, {:claude_error, reason, :codex_fallback_error, fallback_reason}}
@@ -237,7 +364,6 @@ defmodule Shazam.Orchestrator do
           case run_system_cmd_with_progress(agent_name, cli_bin, args, cmd_opts, timeout) do
             {:ok, {output, status}} ->
               parse_codex_exec_result(status, output, out_path)
-
             {:error, :timeout} ->
               {:error, {:codex_exec_timeout, timeout}}
           end
@@ -258,7 +384,6 @@ defmodule Shazam.Orchestrator do
       {:error, reason} -> {:error, {:codex_output_read_failed, reason}}
     end
   end
-
   defp parse_codex_exec_result(status, output, _out_path),
     do: {:error, {:codex_exec_exit_status, status, String.slice(output, 0, 2_000)}}
 
@@ -266,7 +391,6 @@ defmodule Shazam.Orchestrator do
     task = Task.async(fn -> System.cmd(bin, args, opts) end)
     started_at = System.monotonic_time(:millisecond)
     tick_ms = codex_progress_interval_ms()
-
     await_with_progress(task, agent_name, started_at, timeout, tick_ms)
   end
 
@@ -279,10 +403,8 @@ defmodule Shazam.Orchestrator do
     case Task.yield(task, tick_ms) do
       {:ok, result} ->
         {:ok, result}
-
       nil ->
         elapsed_ms = System.monotonic_time(:millisecond) - started_at
-
         if elapsed_ms >= timeout do
           Task.shutdown(task, :brutal_kill)
           {:error, :timeout}
@@ -294,6 +416,118 @@ defmodule Shazam.Orchestrator do
         end
     end
   end
+
+  # --- Broadcasting ---
+
+  defp broadcast_backend_event(agent_name, message) do
+    backend = Registry.current()
+
+    case backend.normalize_event(message) do
+      {:text_delta, text} ->
+        buffer = (Process.get(:text_delta_buffer) || "") <> (text || "")
+        if String.length(buffer) >= @broadcast_batch_chars do
+          Shazam.API.EventBus.broadcast(%{
+            event: "agent_output",
+            agent: agent_name,
+            type: "text_delta",
+            content: buffer
+          })
+          Process.put(:text_delta_buffer, "")
+        else
+          Process.put(:text_delta_buffer, buffer)
+        end
+
+      {:assistant, sub_events} ->
+        flush_text_buffer(agent_name)
+        Enum.each(sub_events, fn
+          {:tool_use, tool_name, input} ->
+            Shazam.API.EventBus.broadcast(%{
+              event: "agent_output",
+              agent: agent_name,
+              type: "tool_use",
+              content: "#{tool_name}: #{inspect(input, limit: 200)}"
+            })
+          {:text, text} ->
+            Shazam.API.EventBus.broadcast(%{
+              event: "agent_output",
+              agent: agent_name,
+              type: "text",
+              content: text
+            })
+          _ -> :ok
+        end)
+
+      {:result_ok, _} ->
+        notify_agent_result(agent_name, "Completed")
+
+      {:result_error, result} ->
+        notify_agent_result(agent_name, "Failed: #{format_result_error(result)}")
+
+      :ignore ->
+        :ok
+
+      _ ->
+        :ok
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp flush_text_buffer(agent_name) do
+    buffer = Process.get(:text_delta_buffer) || ""
+    if buffer != "" do
+      Shazam.API.EventBus.broadcast(%{
+        event: "agent_output",
+        agent: agent_name,
+        type: "text_delta",
+        content: buffer
+      })
+      Process.put(:text_delta_buffer, "")
+    end
+  end
+
+  defp collect_touched_files_claude(message, table) do
+    alias ClaudeCode.Message
+    alias ClaudeCode.Content
+
+    if match?(%Message.AssistantMessage{}, message) do
+      %Message.AssistantMessage{message: msg} = message
+      Enum.each(msg.content, fn
+        %Content.ToolUseBlock{name: tool_name, input: input}
+            when tool_name in ["Edit", "Write"] ->
+          path = input["file_path"] || input[:file_path]
+          if path, do: :ets.insert(table, {path})
+        _ -> :ok
+      end)
+    end
+  rescue
+    _ -> :ok
+  end
+
+  # --- Notifications ---
+
+  defp notify_agent_result(agent_name, content) do
+    Shazam.API.EventBus.broadcast(%{
+      event: "agent_output",
+      agent: agent_name,
+      type: "result",
+      content: content
+    })
+  end
+
+  defp notify_agent_progress(agent_name, content) do
+    Shazam.API.EventBus.broadcast(%{
+      event: "agent_output",
+      agent: agent_name,
+      type: "text",
+      content: content
+    })
+  end
+
+  defp format_result_error(result) when is_binary(result), do: String.slice(result, 0, 300)
+  defp format_result_error(result), do: inspect(result, limit: 200)
+
+  # --- Helpers ---
 
   defp make_codex_output_path do
     base = System.tmp_dir!()
@@ -321,13 +555,9 @@ defmodule Shazam.Orchestrator do
 
   defp fetch_codex_cli_bin do
     configured = Application.get_env(:shazam, :codex_cli_bin, "codex")
-
     case System.find_executable(configured) do
-      nil ->
-        {:error, {:codex_cli_not_found, configured}}
-
-      path ->
-        {:ok, path}
+      nil -> {:error, {:codex_cli_not_found, configured}}
+      path -> {:ok, path}
     end
   end
 
@@ -335,7 +565,6 @@ defmodule Shazam.Orchestrator do
     configured =
       agent[:fallback_model] ||
         Application.get_env(:shazam, :codex_fallback_model, @default_codex_fallback_model)
-
     if is_nil_or_empty(configured), do: nil, else: configured
   end
 
@@ -344,11 +573,7 @@ defmodule Shazam.Orchestrator do
   end
 
   defp codex_fallback_timeout_ms(default_timeout) do
-    Application.get_env(
-      :shazam,
-      :codex_fallback_timeout_ms,
-      default_timeout || @default_codex_fallback_timeout_ms
-    )
+    Application.get_env(:shazam, :codex_fallback_timeout_ms, default_timeout || @default_codex_fallback_timeout_ms)
   end
 
   defp codex_progress_interval_ms do
@@ -357,21 +582,11 @@ defmodule Shazam.Orchestrator do
 
   defp rate_limit_or_quota_error?(reason) do
     patterns = [
-      "429",
-      "rate limit",
-      "ratelimit",
-      "rate_limit",
-      "quota",
-      "insufficient_quota",
-      "too many requests",
-      "resource exhausted",
-      "credit balance is too low",
-      "exceeded your current quota",
-      "hit your limit",
-      "you've hit your limit",
-      "limit reached",
-      "usage limit",
-      "resets "
+      "429", "rate limit", "ratelimit", "rate_limit", "quota",
+      "insufficient_quota", "too many requests", "resource exhausted",
+      "credit balance is too low", "exceeded your current quota",
+      "hit your limit", "you've hit your limit", "limit reached",
+      "usage limit", "resets "
     ]
 
     reason
@@ -391,224 +606,23 @@ defmodule Shazam.Orchestrator do
   end
 
   defp do_collect_error_texts(reason) when is_binary(reason), do: [reason]
-
   defp do_collect_error_texts(reason) when is_map(reason) do
     [
-      Map.get(reason, :result),
-      Map.get(reason, "result"),
-      Map.get(reason, :message),
-      Map.get(reason, "message"),
-      Map.get(reason, :error),
-      Map.get(reason, "error")
+      Map.get(reason, :result), Map.get(reason, "result"),
+      Map.get(reason, :message), Map.get(reason, "message"),
+      Map.get(reason, :error), Map.get(reason, "error")
     ]
     |> Enum.flat_map(&do_collect_error_texts/1)
   end
-
   defp do_collect_error_texts(reason) when is_tuple(reason) do
-    reason
-    |> Tuple.to_list()
-    |> Enum.flat_map(&do_collect_error_texts/1)
+    reason |> Tuple.to_list() |> Enum.flat_map(&do_collect_error_texts/1)
   end
-
   defp do_collect_error_texts(reason) when is_list(reason) do
     Enum.flat_map(reason, &do_collect_error_texts/1)
   end
-
   defp do_collect_error_texts(_), do: []
 
-  defp start_session(opts) do
-    child_spec = %{
-      id: make_ref(),
-      start: {ClaudeCode, :start_link, [opts]},
-      restart: :temporary
-    }
-
-    case DynamicSupervisor.start_child(Shazam.AgentSupervisor, child_spec) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, reason} -> {:error, {:session_start_failed, reason}}
-    end
-  end
-
-  defp execute_query(session, prompt, agent_name) do
-    # Accumulate touched files (Edit, Write)
-    touched_files = :ets.new(:touched_files, [:set, :private])
-
-    # Text delta buffer — flush every @broadcast_batch_chars characters
-    Process.put(:text_delta_buffer, "")
-
-    stream = ClaudeCode.stream(session, prompt, include_partial_messages: true)
-
-    stream =
-      if agent_name do
-        stream
-        |> ClaudeCode.Stream.tap(fn message ->
-          broadcast_agent_event(agent_name, message)
-          collect_touched_files(message, touched_files)
-        end)
-      else
-        stream
-      end
-
-    result = ClaudeCode.Stream.final_result(stream)
-
-    # Flush any remaining buffered text
-    flush_text_buffer(agent_name)
-
-    files = :ets.tab2list(touched_files) |> Enum.map(fn {path} -> path end)
-    :ets.delete(touched_files)
-
-    case result do
-      %{is_error: true} = err -> {:error, err}
-      %{result: text} -> {:ok, text, files}
-      nil -> {:error, :no_result}
-    end
-  end
-
-  defp collect_touched_files(message, table) do
-    alias ClaudeCode.Message
-    alias ClaudeCode.Content
-
-    if match?(%Message.AssistantMessage{}, message) do
-      %Message.AssistantMessage{message: msg} = message
-      Enum.each(msg.content, fn
-        %Content.ToolUseBlock{name: tool_name, input: input}
-            when tool_name in ["Edit", "Write"] ->
-          path = input["file_path"] || input[:file_path]
-          if path, do: :ets.insert(table, {path})
-
-        _ ->
-          :ok
-      end)
-    end
-  rescue
-    _ -> :ok
-  end
-
-  # Batch text deltas — send every N chars instead of per-chunk (~400 broadcasts → ~20)
-  @broadcast_batch_chars 200
-
-  defp broadcast_agent_event(agent_name, message) do
-    alias ClaudeCode.Message
-    alias ClaudeCode.Message.PartialAssistantMessage
-    alias ClaudeCode.Content
-
-    cond do
-      # Text delta — buffer and batch
-      match?(%PartialAssistantMessage{}, message) and PartialAssistantMessage.text_delta?(message) ->
-        text = PartialAssistantMessage.get_text(message)
-        buffer = (Process.get(:text_delta_buffer) || "") <> (text || "")
-
-        if String.length(buffer) >= @broadcast_batch_chars do
-          Shazam.API.EventBus.broadcast(%{
-            event: "agent_output",
-            agent: agent_name,
-            type: "text_delta",
-            content: buffer
-          })
-          Process.put(:text_delta_buffer, "")
-        else
-          Process.put(:text_delta_buffer, buffer)
-        end
-
-      # Tool use — flush text buffer first, then broadcast tool
-      match?(%Message.AssistantMessage{}, message) ->
-        flush_text_buffer(agent_name)
-        %Message.AssistantMessage{message: msg} = message
-        Enum.each(msg.content, fn
-          %Content.ToolUseBlock{name: tool_name, input: input} ->
-            Shazam.API.EventBus.broadcast(%{
-              event: "agent_output",
-              agent: agent_name,
-              type: "tool_use",
-              content: "#{tool_name}: #{inspect(input, limit: 200)}"
-            })
-
-          %Content.TextBlock{text: text} ->
-            Shazam.API.EventBus.broadcast(%{
-              event: "agent_output",
-              agent: agent_name,
-              type: "text",
-              content: text
-            })
-
-          _ ->
-            :ok
-        end)
-
-      # Result
-      match?(%Message.ResultMessage{}, message) ->
-        %Message.ResultMessage{} = result_msg = message
-
-        content =
-          if result_msg.is_error do
-            "Failed: #{format_result_error(result_msg.result)}"
-          else
-            "Completed"
-          end
-
-        notify_agent_result(agent_name, content)
-
-      true ->
-        :ok
-    end
-  rescue
-    _ -> :ok
-  end
-
-  defp flush_text_buffer(agent_name) do
-    buffer = Process.get(:text_delta_buffer) || ""
-    if buffer != "" do
-      Shazam.API.EventBus.broadcast(%{
-        event: "agent_output",
-        agent: agent_name,
-        type: "text_delta",
-        content: buffer
-      })
-      Process.put(:text_delta_buffer, "")
-    end
-  end
-
-  defp notify_agent_result(agent_name, content) do
-    Shazam.API.EventBus.broadcast(%{
-      event: "agent_output",
-      agent: agent_name,
-      type: "result",
-      content: content
-    })
-  end
-
-  defp notify_agent_progress(agent_name, content) do
-    Shazam.API.EventBus.broadcast(%{
-      event: "agent_output",
-      agent: agent_name,
-      type: "text",
-      content: content
-    })
-  end
-
-  defp format_result_error(result) when is_binary(result), do: String.slice(result, 0, 300)
-  defp format_result_error(result), do: inspect(result, limit: 200)
-
-  defp execute_stream(session, name, prompt) do
-    IO.puts("\n--- [#{name}] ---")
-
-    text =
-      session
-      |> ClaudeCode.stream(prompt)
-      |> ClaudeCode.Stream.text_content()
-      |> Enum.map(fn chunk ->
-        IO.write(chunk)
-        chunk
-      end)
-      |> Enum.join()
-
-    IO.puts("\n--- [/#{name}] ---\n")
-
-    {:ok, text}
-  end
-
   defp resolve_prompt(agent, nil), do: agent[:prompt]
-
   defp resolve_prompt(agent, prev_output) do
     case agent[:prompt] do
       fun when is_function(fun, 1) -> fun.(prev_output)
@@ -628,7 +642,4 @@ defmodule Shazam.Orchestrator do
       end
     end)
   end
-
-  defp maybe_add(opts, _key, _value, false), do: opts
-  defp maybe_add(opts, key, value, true), do: Keyword.put(opts, key, value)
 end

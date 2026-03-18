@@ -2,18 +2,21 @@ defmodule Shazam.TaskExecutor do
   @moduledoc """
   Task execution logic extracted from RalphLoop.
   Handles building prompts, resolving agent profiles, and running agent tasks.
+  Backend-agnostic — uses Shazam.Backend.Registry for session management.
   """
 
   require Logger
 
   alias Shazam.{Orchestrator, SkillMemory}
   alias Shazam.TaskExecutor.PromptBuilder
+  alias Shazam.Backend.{Registry, ToolMapper}
 
   @task_timeout 1_800_000
 
   @doc "Run an agent task with the given profile, task, and company name."
   def run_agent_task(agent_profile, task, company_name) do
-    # Build session config
+    backend = Registry.current()
+
     base_prompt = agent_profile.system_prompt || "You are #{agent_profile.role}. Be direct and objective."
     skills_prompt = PromptBuilder.build_skills_prompt(agent_profile.skills)
     modules_prompt = PromptBuilder.build_modules_prompt(agent_profile.modules)
@@ -31,12 +34,13 @@ defmodule Shazam.TaskExecutor do
       agent_profile.model
     end
 
-    tools = if is_pm, do: [], else: agent_profile.tools
+    # Map tools to backend-specific names
+    raw_tools = if is_pm, do: [], else: agent_profile.tools
+    tools = ToolMapper.map_tools(raw_tools, backend)
 
     domain_restriction_prompt = PromptBuilder.build_domain_restriction_prompt(agent_profile, company_name)
     tech_stack_prompt = PromptBuilder.build_tech_stack_prompt()
 
-    # Non-PM agents get implementation instructions to avoid "plan only" outputs
     impl_prompt = if is_pm, do: "", else: PromptBuilder.implementation_instructions()
 
     system_prompt = base_prompt <> impl_prompt <> role_rules_prompt <> tech_stack_prompt <> skills_prompt <> modules_prompt <> memory_prompt <> pm_prompt <> designer_prompt <> analyst_prompt <> domain_restriction_prompt
@@ -53,28 +57,23 @@ defmodule Shazam.TaskExecutor do
         []
       end
 
-    session_opts =
-      [
-        system_prompt: system_prompt,
-        timeout: @task_timeout,
-        permission_mode: :bypass_permissions,
-        setting_sources: ["user", "project"],
-        env: %{"CLAUDECODE" => ""}
-      ]
-      |> maybe_add_opt(:allowed_tools, if(tools != [], do: tools ++ ["Skill"], else: nil), tools != [])
-      |> maybe_add_opt(:model, model, model != nil)
-      |> maybe_add_opt(:cwd, workspace, workspace != nil)
-      |> maybe_add_opt(:add_dir, module_dirs, module_dirs != [])
+    # Build backend-agnostic config, then let the backend translate
+    config = %{
+      system_prompt: system_prompt,
+      timeout: @task_timeout,
+      cwd: workspace,
+      model: model,
+      tools: tools,
+      module_dirs: module_dirs
+    }
 
-    # Use SessionPool — reuse existing session or create new one
+    session_opts = backend.build_session_opts(config)
+
     case Shazam.SessionPool.checkout(agent_profile.name, session_opts) do
-      {:ok, session_pid, session_type} ->
-        # Build prompt based on session type:
-        # :new → full context (role, ancestry, memory instructions)
-        # :reused → lean prompt (just the task — agent already has context)
+      {:ok, session, session_type} ->
         prompt = PromptBuilder.build_task_prompt(agent_profile, task, session_type)
 
-        Logger.info("[RalphLoop] #{if session_type == :reused, do: "Reusing", else: "New"} session for '#{agent_profile.name}' | prompt ~#{String.length(prompt)} chars")
+        Logger.info("[RalphLoop] #{if session_type == :reused, do: "Reusing", else: "New"} session for '#{agent_profile.name}' on #{backend.name()} | prompt ~#{String.length(prompt)} chars")
 
         Shazam.API.EventBus.broadcast(%{
           event: "agent_output",
@@ -84,11 +83,10 @@ defmodule Shazam.TaskExecutor do
 
         Shazam.Metrics.set_status(agent_profile.name, "working")
 
-        result = Orchestrator.execute_on_session(session_pid, agent_profile.name, prompt)
+        result = Orchestrator.execute_on_session(session, agent_profile.name, prompt)
 
         Shazam.Metrics.set_status(agent_profile.name, "idle")
 
-        # Check-in (mark as available for next task)
         Shazam.SessionPool.checkin(agent_profile.name)
 
         case result do
@@ -99,7 +97,6 @@ defmodule Shazam.TaskExecutor do
       {:error, reason} ->
         Logger.error("[RalphLoop] SessionPool checkout failed for '#{agent_profile.name}': #{inspect(reason)}")
 
-        # Fallback — run via Orchestrator (creates ephemeral session)
         prompt = PromptBuilder.build_task_prompt(agent_profile, task, :new)
 
         agent_config = %{

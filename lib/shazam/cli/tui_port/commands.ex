@@ -52,6 +52,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "",
       "/search <query>     — Search tasks by title",
       "/export [filename]  — Export tasks to markdown",
+      "",
+      "Backend:",
+      "/backend             — Show current AI backend",
+      "/backend list        — List available backends",
+      "/backend set <name>  — Switch backend (claude_code, cursor_cli)",
+      "",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
       "/exit               — Exit Shazam"
@@ -62,11 +68,71 @@ defmodule Shazam.CLI.TuiPort.Commands do
     state
   end
 
+  def handle_command("/backend set " <> name, state) do
+    try do
+      key = name |> String.trim() |> String.downcase() |> String.replace("-", "_")
+
+      if key in ["claude_code", "cursor_cli"] do
+        atom_key = String.to_atom(key)
+        backend = Shazam.Backend.Registry.resolve(atom_key)
+
+        if backend.available?() do
+          Shazam.Backend.Registry.set_backend(atom_key)
+          version = backend.cli_version() || ""
+          Helpers.send_event(state.port, "system", "backend", "Switched to #{backend.name()} #{version}")
+        else
+          Helpers.send_event(state.port, "system", "error", "Backend '#{key}' is not installed")
+        end
+      else
+        Helpers.send_event(state.port, "system", "error", "Unknown backend: #{key}. Use: claude_code, cursor_cli")
+      end
+    rescue
+      e -> Helpers.send_event(state.port, "system", "error", "Backend error: #{Exception.message(e)}")
+    end
+
+    state
+  end
+
+  def handle_command("/backend list", state) do
+    try do
+      available = Shazam.Backend.Registry.detect_available()
+      current = Shazam.Backend.Registry.current()
+
+      if available == [] do
+        Helpers.send_event(state.port, "system", "backend", "No backends detected")
+      else
+        Enum.each(available, fn info ->
+          marker = if info.module == current, do: " (active)", else: ""
+          version = if info.version, do: " #{info.version}", else: ""
+          sessions = if info.sessions, do: "persistent sessions", else: "stateless"
+          Helpers.send_event(state.port, "system", "backend", "#{info.key} — #{info.name}#{version} • #{sessions}#{marker}")
+        end)
+      end
+    rescue
+      e -> Helpers.send_event(state.port, "system", "error", "Backend error: #{Exception.message(e)}")
+    end
+
+    state
+  end
+
+  def handle_command("/backend" <> _, state) do
+    try do
+      backend = Shazam.Backend.Registry.current()
+      version = backend.cli_version() || ""
+      sessions = if backend.supports_sessions?(), do: "persistent sessions", else: "stateless"
+      Helpers.send_event(state.port, "system", "backend", "#{backend.name()} #{version} • #{sessions}")
+    rescue
+      e -> Helpers.send_event(state.port, "system", "error", "Backend error: #{Exception.message(e)}")
+    end
+    state
+  end
+
   def handle_command("/start", state) do
     config = state.company.config
     company_name = state.company.name
 
-    unless Shazam.RalphLoop.exists?(company_name) do
+    # Step 1: Ensure company GenServer exists
+    unless company_alive?(company_name) do
       company_config = %{
         name: company_name,
         mission: config.mission,
@@ -79,13 +145,16 @@ defmodule Shazam.CLI.TuiPort.Commands do
           Helpers.send_event(state.port, "system", "company_started",
             "Company '#{company_name}' started — #{length(config.agents)} agent(s)")
         {:error, {:already_started, _}} ->
-          Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running")
+          :ok
         {:error, reason} ->
           Helpers.send_event(state.port, "system", "error", "Failed to start: #{inspect(reason)}")
       end
     end
 
-    # Apply ralph_config
+    # Step 2: Ensure RalphLoop exists (may not if company was already_started or race condition)
+    ensure_ralph_loop(company_name)
+
+    # Step 3: Apply ralph_config
     if config[:ralph_config] do
       rc = config.ralph_config
       try do
@@ -96,11 +165,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
       end
     end
 
-    # Resume
-    case Shazam.RalphLoop.resume(company_name) do
-      {:ok, _} ->
-        Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
-      _ -> :ok
+    # Step 4: Resume (RalphLoop starts paused by default)
+    try do
+      Shazam.RalphLoop.resume(company_name)
+      Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
+    rescue
+      _ -> Helpers.send_event(state.port, "system", "error", "Could not resume agents")
     end
 
     # Subscribe to EventBus now that company is running
@@ -114,9 +184,15 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
   def handle_command("/stop", state) do
     company_name = state.company.name
-    if Code.ensure_loaded?(Shazam.RalphLoop) do
-      Shazam.RalphLoop.pause(company_name)
-      Helpers.send_event(state.port, "system", "ralph_paused", "Agents stopped")
+    try do
+      if Shazam.RalphLoop.exists?(company_name) do
+        Shazam.RalphLoop.pause(company_name)
+        Helpers.send_event(state.port, "system", "ralph_paused", "Agents stopped")
+      else
+        Helpers.send_event(state.port, "system", "info", "Agents are not running")
+      end
+    rescue
+      _ -> Helpers.send_event(state.port, "system", "info", "Agents are not running")
     end
     Status.send_status(state)
     state
@@ -126,11 +202,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
   def handle_command("/resume", state) do
     company_name = state.company.name
-    if Code.ensure_loaded?(Shazam.RalphLoop) do
-      case Shazam.RalphLoop.resume(company_name) do
-        {:ok, _} -> Helpers.send_event(state.port, "system", "ralph_resumed", "Agents resumed")
-        _ -> Helpers.send_event(state.port, "system", "info", "Could not resume")
-      end
+    try do
+      ensure_ralph_loop(company_name)
+      Shazam.RalphLoop.resume(company_name)
+      Helpers.send_event(state.port, "system", "ralph_resumed", "Agents resumed")
+    rescue
+      _ -> Helpers.send_event(state.port, "system", "error", "Could not resume — try /start first")
     end
     Status.send_status(state)
     state
@@ -212,10 +289,24 @@ defmodule Shazam.CLI.TuiPort.Commands do
     end
   end
 
+  def handle_command("/task", state) do
+    Helpers.send_event(
+      state.port,
+      "system",
+      "info",
+      "Uso: /task <descrição>  — ou digite a tarefa direto (cria e enfileira para o PM). Backend ativo: #{Shazam.Backend.Registry.current().name()}"
+    )
+
+    state
+  end
+
   def handle_command("/task " <> title, state) do
     title = Helpers.expand_attachments(title, state)
     company_name = Helpers.deep_get(state, [:company, :name])
     pm_name = Helpers.find_pm_name(state)
+
+    # Auto-start company + RalphLoop if not running
+    ensure_running(state)
 
     if Code.ensure_loaded?(Shazam.TaskBoard) do
       Shazam.TaskBoard.create(%{
@@ -795,6 +886,9 @@ defmodule Shazam.CLI.TuiPort.Commands do
     company_name = Helpers.deep_get(state, [:company, :name])
     pm_name = Helpers.find_pm_name(state)
 
+    # Auto-start company + RalphLoop if not running
+    ensure_running(state)
+
     if Code.ensure_loaded?(Shazam.TaskBoard) do
       Shazam.TaskBoard.create(%{
         title: title,
@@ -810,4 +904,65 @@ defmodule Shazam.CLI.TuiPort.Commands do
   end
 
   def handle_command(_, state), do: state
+
+  # --- Helpers for /start ---
+
+  defp company_alive?(company_name) do
+    case Registry.lookup(Shazam.CompanyRegistry, company_name) do
+      [{pid, _}] -> Process.alive?(pid)
+      _ -> false
+    end
+  end
+
+  defp ensure_ralph_loop(company_name) do
+    unless Shazam.RalphLoop.exists?(company_name) do
+      # Wait briefly for async :attach_ralph_loop message to be processed
+      Process.sleep(300)
+    end
+
+    unless Shazam.RalphLoop.exists?(company_name) do
+      # Still not started — start it directly
+      child_spec = %{
+        id: {Shazam.RalphLoop, company_name},
+        start: {Shazam.RalphLoop, :start_link, [company_name, [max_concurrent: 4]]},
+        restart: :transient
+      }
+
+      case DynamicSupervisor.start_child(Shazam.RalphLoopSupervisor, child_spec) do
+        {:ok, _} -> :ok
+        {:error, {:already_started, _}} -> :ok
+        {:error, reason} ->
+          require Logger
+          Logger.error("[Commands] Failed to start RalphLoop: #{inspect(reason)}")
+      end
+    end
+  end
+
+  defp ensure_running(state) do
+    company_name = state.company.name
+    config = state.company.config
+
+    unless company_alive?(company_name) do
+      company_config = %{
+        name: company_name,
+        mission: config.mission,
+        agents: config.agents,
+        domain_config: config[:domain_config] || %{}
+      }
+
+      case Shazam.start_company(company_config) do
+        {:ok, _} -> :ok
+        {:error, {:already_started, _}} -> :ok
+        _ -> :ok
+      end
+    end
+
+    ensure_ralph_loop(company_name)
+
+    try do
+      Shazam.RalphLoop.resume(company_name)
+    rescue
+      _ -> :ok
+    end
+  end
 end

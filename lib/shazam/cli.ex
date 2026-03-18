@@ -74,14 +74,20 @@ defmodule Shazam.CLI do
       IO.puts(["    3. ", IO.ANSI.cyan(), "shazam help", IO.ANSI.reset(), "   — See all commands"])
       IO.puts("")
 
-      # Check if Claude CLI is available
-      case System.cmd("sh", ["-c", "which claude 2>/dev/null"], stderr_to_stdout: true) do
-        {_, 0} ->
-          Formatter.success("Claude CLI detected")
+      # Detect available backends
+      available = Shazam.Backend.Registry.detect_available()
 
-        _ ->
-          Formatter.warning("Claude CLI not found")
-          IO.puts(["    Install: ", IO.ANSI.cyan(), "npm install -g @anthropic-ai/claude-code", IO.ANSI.reset()])
+      if available != [] do
+        IO.puts(["  ", IO.ANSI.bright(), "Available backends:", IO.ANSI.reset()])
+        Enum.each(available, fn info ->
+          version = if info.version, do: " (#{info.version})", else: ""
+          sessions = if info.sessions, do: " • persistent sessions", else: " • stateless"
+          Formatter.success("#{info.name}#{version}#{sessions}")
+        end)
+      else
+        Formatter.warning("No AI backends detected")
+        IO.puts(["    Claude Code: ", IO.ANSI.cyan(), "npm install -g @anthropic-ai/claude-code", IO.ANSI.reset()])
+        IO.puts(["    Cursor CLI:  ", IO.ANSI.cyan(), "Install Cursor and enable 'agent' CLI", IO.ANSI.reset()])
       end
 
       IO.puts("")
@@ -187,6 +193,7 @@ defmodule Shazam.CLI do
         --company, -c NAME      Target company (default: from shazam.yaml)
         --port, -p PORT         Server port (default: 4040)
         --file, -f FILE         Config file (default: shazam.yaml)
+        --backend, -b BACKEND   AI backend: claude_code, cursor_cli
 
       #{IO.ANSI.bright()}EXAMPLES#{IO.ANSI.reset()}
         shazam                 Enter interactive REPL (if config exists)
