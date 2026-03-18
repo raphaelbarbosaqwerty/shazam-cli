@@ -76,6 +76,7 @@ You (CEO) ──> describe task in natural language
 | **Persistent history** | Command history saved across sessions |
 | **Multi-project** | Each project directory gets isolated tasks, agents, and metrics |
 | **Task detail view** | Select a task in `/tasks` to see full result output |
+| **Markdown task files** | Tasks persist as .md files in .shazam/tasks/ — version-controlled, human-readable |
 
 ---
 
@@ -425,7 +426,7 @@ When running `shazam shell`, the following `/commands` are available:
 | `/status` | Company and agent overview |
 | `/agents` | List all agents with status |
 | `/org` | Show org chart |
-| `/tasks` | List tasks (`--clear` to reset) |
+| `/tasks` | List tasks (`--clear`, `--sync`, `--export`) |
 | `/task <title>` | Create a new task (`--to agent`) |
 | `/approve [id]` | Approve pending task (`--all` for batch) |
 | `/aa` | Approve all pending tasks (shortcut) |
@@ -509,6 +510,45 @@ pending -> in_progress -> completed
 ```
 
 Tasks support: creation, atomic checkout, completion, failure, retry, pause/resume, reassignment, soft delete, and hard purge.
+
+### Task Files
+
+Tasks are automatically persisted as markdown files in `.shazam/tasks/` relative to your project workspace. Each task is a `.md` file with YAML frontmatter:
+
+```
+.shazam/tasks/
+├── task_1.md    # completed
+├── task_2.md    # in_progress
+└── task_3.md    # pending
+```
+
+You can:
+- **Create tasks in bulk** by adding `.md` files to the folder manually
+- **Import** with `/tasks --sync` to load files into the task board
+- **Export** with `/tasks --export` to save all current tasks as files
+- **Version control** task files alongside your code
+
+Task file format:
+```yaml
+---
+id: task_1
+title: "Implement user authentication"
+status: completed
+assigned_to: senior_1
+created_by: human
+company: MyProject
+created_at: 2026-03-18T10:00:00Z
+completed_at: 2026-03-18T10:30:00Z
+---
+
+## Description
+
+Implement JWT-based authentication.
+
+## Result
+
+Implemented in lib/auth/ — 3 files created.
+```
 
 ### Subtask Delegation
 

@@ -963,6 +963,14 @@ fn draw_help_overlay(f: &mut Frame, area: Rect, state: &AppState) {
             Span::raw("List tasks (--clear to reset)"),
         ]),
         Line::from(vec![
+            Span::styled("  /tasks --sync ", Style::default().fg(Color::Cyan)),
+            Span::raw("Import tasks from .shazam/tasks/ files"),
+        ]),
+        Line::from(vec![
+            Span::styled("  /tasks --export ", Style::default().fg(Color::Cyan)),
+            Span::raw("Export all tasks to .shazam/tasks/ as markdown"),
+        ]),
+        Line::from(vec![
             Span::styled("  /approve ", Style::default().fg(Color::Cyan)),
             Span::raw("Approve a pending task (--all for batch)"),
         ]),
