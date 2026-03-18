@@ -24,7 +24,7 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/status             — Company and agent overview",
       "/agents             — List all agents with status",
       "/org                — Show org chart",
-      "/tasks              — List tasks [--clear]",
+      "/tasks              — List tasks [--clear|--sync|--export]",
       "/task <title>       — Create a new task [--to agent]",
       "/approve [id]       — Approve pending task (--all for batch)",
       "/aa                 — Approve all pending tasks (shortcut)",
@@ -149,28 +149,48 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
   def handle_command("/tasks" <> rest, state) do
     args = String.trim(rest)
-    if args == "--clear" do
-      company_name = Helpers.deep_get(state, [:company, :name])
-      if Code.ensure_loaded?(Shazam.TaskBoard) do
+    cond do
+      args == "--sync" ->
+        # Import tasks from .shazam/tasks/ files
+        imported = Shazam.TaskFiles.read_all()
+        new_count = Enum.count(imported, fn t ->
+          case Shazam.TaskBoard.get(t.id) do
+            {:ok, _} -> false
+            _ -> true
+          end
+        end)
+        Shazam.TaskFiles.sync_from_files()
+        Helpers.send_event(state.port, "system", "info", "Synced #{length(imported)} tasks from .shazam/tasks/ (#{new_count} new)")
+        Status.send_status(state)
+
+      args == "--export" ->
         tasks = Helpers.list_tasks(state)
-        Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
-      end
-      Helpers.send_event(state.port, "system", "tasks_cleared", "Tasks cleared for #{company_name}")
-      Status.send_status(state)
-    else
-      tasks = Helpers.list_tasks(state)
-      task_items = Enum.map(tasks, fn t ->
-        %{
-          id: t.id,
-          title: t.title || "",
-          status: to_string(t.status),
-          assigned_to: t.assigned_to,
-          created_by: t.created_by,
-          created_at: format_task_time(t),
-          result: if(is_binary(t.result), do: String.slice(t.result, 0..500), else: nil)
-        }
-      end)
-      Helpers.send_json(state.port, %{type: "task_list", tasks: task_items})
+        Shazam.TaskFiles.sync_to_files(tasks)
+        Helpers.send_event(state.port, "system", "info", "Exported #{length(tasks)} tasks to .shazam/tasks/")
+
+      args == "--clear" ->
+        company_name = Helpers.deep_get(state, [:company, :name])
+        if Code.ensure_loaded?(Shazam.TaskBoard) do
+          tasks = Helpers.list_tasks(state)
+          Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
+        end
+        Helpers.send_event(state.port, "system", "tasks_cleared", "Tasks cleared for #{company_name}")
+        Status.send_status(state)
+
+      true ->
+        tasks = Helpers.list_tasks(state)
+        task_items = Enum.map(tasks, fn t ->
+          %{
+            id: t.id,
+            title: t.title || "",
+            status: to_string(t.status),
+            assigned_to: t.assigned_to,
+            created_by: t.created_by,
+            created_at: format_task_time(t),
+            result: if(is_binary(t.result), do: String.slice(t.result, 0..500), else: nil)
+          }
+        end)
+        Helpers.send_json(state.port, %{type: "task_list", tasks: task_items})
     end
     state
   end

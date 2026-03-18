@@ -13,7 +13,8 @@
 
         # Elixir/Erlang
         erlang = pkgs.erlang_27;
-        elixir = pkgs.elixir_1_17;
+        beamPkgs = pkgs.beam.packagesWith erlang;
+        elixir = beamPkgs.elixir_1_18;
       in
       {
         devShells.default = pkgs.mkShell {

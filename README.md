@@ -177,7 +177,7 @@ curl -fsSL https://raw.githubusercontent.com/raphaelbarbosaqwerty/shazam-cli/mai
 
 If you prefer not to use Nix, install these first:
 
-- **Elixir** >= 1.16 and **Erlang/OTP** >= 26 ([install](https://elixir-lang.org/install.html))
+- **Elixir** >= 1.18 and **Erlang/OTP** >= 27 ([install](https://elixir-lang.org/install.html))
 - **Rust** ([install](https://rustup.rs/))
 - **Claude Code** installed and logged in ([install](https://docs.anthropic.com/en/docs/claude-code))
 

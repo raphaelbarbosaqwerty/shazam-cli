@@ -499,6 +499,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/pause", "pause agents"),
     ("/resume", "resume agents"),
     ("/tasks", "list tasks"),
+    ("/tasks --sync", ""),
+    ("/tasks --export", ""),
     ("/task ", "create task"),
     ("/approve", "approve pending task"),
     ("/approve --all", "approve all"),

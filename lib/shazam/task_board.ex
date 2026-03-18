@@ -178,6 +178,7 @@ defmodule Shazam.TaskBoard do
     :ets.insert(state.table, {id, task})
     Logger.info("[TaskBoard] Task created: #{id} - #{task.title}")
     broadcast(:task_created, task)
+    spawn(fn -> Shazam.TaskFiles.write_task(task) end)
 
     {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
   end
@@ -219,6 +220,7 @@ defmodule Shazam.TaskBoard do
         :ets.insert(state.table, {task_id, updated})
         Logger.info("[TaskBoard] Task #{task_id} approved → pending")
         broadcast(:task_approved, updated)
+        spawn(fn -> Shazam.TaskFiles.update_status(task_id, :pending) end)
         {:reply, {:ok, updated}, schedule_save(state)}
 
       [{^task_id, %{status: status}}] ->
@@ -253,6 +255,7 @@ defmodule Shazam.TaskBoard do
         :ets.insert(state.table, {task_id, updated})
         Logger.info("[TaskBoard] #{agent_name} checked out #{task_id}")
         broadcast(:task_checkout, updated)
+        spawn(fn -> Shazam.TaskFiles.update_status(task_id, :in_progress) end)
         {:reply, {:ok, updated}, schedule_save(state)}
 
       [{^task_id, %{status: status}}] ->
@@ -270,6 +273,7 @@ defmodule Shazam.TaskBoard do
         :ets.insert(state.table, {task_id, updated})
         Logger.info("[TaskBoard] Task #{task_id} completed")
         broadcast(:task_completed, updated)
+        spawn(fn -> Shazam.TaskFiles.update_status(task_id, :completed, result) end)
         {:reply, {:ok, updated}, schedule_save(state)}
 
       [{^task_id, _}] ->
@@ -287,6 +291,7 @@ defmodule Shazam.TaskBoard do
         :ets.insert(state.table, {task_id, updated})
         Logger.warning("[TaskBoard] Task #{task_id} failed: #{inspect(reason)}")
         broadcast(:task_failed, updated)
+        spawn(fn -> Shazam.TaskFiles.update_status(task_id, :failed, inspect(reason)) end)
         {:reply, {:ok, updated}, schedule_save(state)}
 
       [] ->
@@ -380,6 +385,7 @@ defmodule Shazam.TaskBoard do
         :ets.insert(state.table, {task_id, updated})
         Logger.info("[TaskBoard] Task #{task_id} soft-deleted")
         broadcast(:task_deleted, updated)
+        spawn(fn -> Shazam.TaskFiles.delete_task(task_id) end)
         {:reply, :ok, schedule_save(state)}
 
       [] ->
