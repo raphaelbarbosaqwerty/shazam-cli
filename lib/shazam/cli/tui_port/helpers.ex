@@ -154,9 +154,14 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     end
   end
 
-  def list_tasks(_state) do
+  def list_tasks(state) do
+    company_name = deep_get(state, [:company, :name])
     if Code.ensure_loaded?(Shazam.TaskBoard) do
-      Shazam.TaskBoard.list()
+      if company_name do
+        Shazam.TaskBoard.list(%{company: company_name})
+      else
+        Shazam.TaskBoard.list()
+      end
     else
       []
     end
@@ -166,7 +171,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
   def approve_all(state) do
     if Code.ensure_loaded?(Shazam.TaskBoard) do
-      tasks = Shazam.TaskBoard.list()
+      tasks = list_tasks(state)
       pending = Enum.filter(tasks, &(to_string(&1.status) == "awaiting_approval"))
       Enum.each(pending, fn t ->
         Shazam.TaskBoard.approve(t.id)
@@ -184,7 +189,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
   def approve_next(state) do
     if Code.ensure_loaded?(Shazam.TaskBoard) do
-      tasks = Shazam.TaskBoard.list()
+      tasks = list_tasks(state)
       case Enum.find(tasks, &(to_string(&1.status) == "awaiting_approval")) do
         nil ->
           send_event(state.port, "system", "info", "No tasks awaiting approval")

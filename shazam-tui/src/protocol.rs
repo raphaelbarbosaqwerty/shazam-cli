@@ -82,6 +82,7 @@ pub struct TaskItem {
     pub assigned_to: Option<String>,
     pub created_by: Option<String>,
     pub created_at: Option<String>,
+    pub result: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

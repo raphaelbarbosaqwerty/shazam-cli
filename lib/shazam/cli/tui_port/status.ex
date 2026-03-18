@@ -7,7 +7,7 @@ defmodule Shazam.CLI.TuiPort.Status do
 
   def send_status(state) do
     {agents_total, agents_active} = get_agent_counts(state)
-    {pending, running, done, awaiting} = get_task_counts()
+    {pending, running, done, awaiting} = get_task_counts(state)
     {budget_used, budget_total} = get_budget_info(state)
     company_name = Helpers.deep_get(state, [:company, :name]) || "Shazam"
     ralph_status = get_ralph_status(state)
@@ -49,9 +49,9 @@ defmodule Shazam.CLI.TuiPort.Status do
     _, _ -> {0, 0}
   end
 
-  def get_task_counts do
+  def get_task_counts(state) do
     if Code.ensure_loaded?(Shazam.TaskBoard) do
-      tasks = Shazam.TaskBoard.list()
+      tasks = Helpers.list_tasks(state)
       awaiting = Enum.count(tasks, &(normalize_status(&1.status) == "awaiting_approval"))
       pending = Enum.count(tasks, &(normalize_status(&1.status) == "pending"))
       running = Enum.count(tasks, &(normalize_status(&1.status) in ["in_progress", "running"]))
@@ -124,7 +124,7 @@ defmodule Shazam.CLI.TuiPort.Status do
 
       current_task = if Code.ensure_loaded?(Shazam.TaskBoard) do
         try do
-          case Shazam.TaskBoard.list() |> Enum.find(&(&1.assigned_to == name && normalize_status(&1.status) in ["in_progress", "running"])) do
+          case Helpers.list_tasks(state) |> Enum.find(&(&1.assigned_to == name && normalize_status(&1.status) in ["in_progress", "running"])) do
             nil -> nil
             t -> t.title
           end

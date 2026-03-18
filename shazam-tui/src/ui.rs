@@ -19,12 +19,8 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let input_display_width: u16 = state.input.chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1) as u16)
         .sum();
-    let ghost_width: u16 = if !state.ghost_text.is_empty() && state.cursor_pos == state.input.chars().count() {
-        state.ghost_text.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(1) as u16).sum()
-    } else {
-        0
-    };
-    let total_input_width = prompt_width + input_display_width + ghost_width;
+    // Ghost text should NOT affect input area height — only typed text + prompt matter
+    let total_input_width = prompt_width + input_display_width;
     let usable_width = size.width.max(1);
     let input_lines = ((total_input_width as f32) / (usable_width as f32)).ceil().max(1.0) as u16;
     let input_height = input_lines.min(6); // Cap at 6 lines
@@ -238,7 +234,9 @@ fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
 
     let mut spans = vec![prompt, Span::raw(&state.input)];
 
-    // Ghost text (completable part) + hint (display-only description)
+    // Ghost text (completable part) — included in wrapping spans
+    // Hint (display-only description) — kept separate, appended to last line only
+    let mut hint_span: Option<Span> = None;
     if state.cursor_pos == state.input.chars().count() {
         if !state.ghost_text.is_empty() {
             spans.push(Span::styled(
@@ -250,7 +248,7 @@ fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
         let full = format!("{}{}", &state.input, &state.ghost_text);
         let hint = crate::command_hint(&full);
         if !hint.is_empty() {
-            spans.push(Span::styled(
+            hint_span = Some(Span::styled(
                 hint,
                 Style::default().fg(Color::Rgb(80, 80, 100)),
             ));
@@ -318,6 +316,13 @@ fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
     }
     if !current_line.is_empty() {
         visual_lines.push(current_line);
+    }
+
+    // Append hint to the last visual line only (does not affect wrapping)
+    if let Some(hint) = hint_span {
+        if let Some(last) = visual_lines.last_mut() {
+            last.push(hint);
+        }
     }
 
     let lines: Vec<Line> = visual_lines.into_iter().map(Line::from).collect();
@@ -461,13 +466,15 @@ fn draw_tasks_overlay(f: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // Layout: summary line + separator + table
+    // Layout: summary line + separator + table + detail separator + detail
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Summary
             Constraint::Length(1), // Separator
-            Constraint::Min(3),   // Table
+            Constraint::Min(5),   // Table
+            Constraint::Length(1), // Detail separator
+            Constraint::Length(5), // Detail panel
         ])
         .split(inner);
 
@@ -602,6 +609,35 @@ fn draw_tasks_overlay(f: &mut Frame, area: Rect, state: &AppState) {
             scrollbar_area,
             &mut scrollbar_state,
         );
+    }
+
+    // Detail separator
+    let detail_sep = "─".repeat(chunks[3].width as usize);
+    f.render_widget(
+        Paragraph::new(Span::styled(detail_sep, Style::default().fg(Color::Rgb(50, 50, 60)))),
+        chunks[3],
+    );
+
+    // Detail panel — show selected task info
+    if let Some(task) = state.task_items.get(state.tasks_selected) {
+        let mut detail_lines: Vec<Line> = Vec::new();
+        detail_lines.push(Line::from(vec![
+            Span::styled(" Title: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(&task.title, Style::default().fg(Color::White)),
+        ]));
+        if let Some(ref result) = task.result {
+            if !result.is_empty() {
+                detail_lines.push(Line::from(vec![
+                    Span::styled(" Result: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        truncate_str(result, (chunks[4].width as usize).saturating_sub(10).max(20)),
+                        Style::default().fg(Color::Green),
+                    ),
+                ]));
+            }
+        }
+        let detail = Paragraph::new(detail_lines).wrap(Wrap { trim: false });
+        f.render_widget(detail, chunks[4]);
     }
 
     // Action menu popup

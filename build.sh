@@ -44,7 +44,7 @@ cd "${PROJECT_DIR}"
 mix local.hex --force --if-missing > /dev/null 2>&1
 mix local.rebar --force --if-missing > /dev/null 2>&1
 mix deps.get --quiet 2>&1
-mix escript.build 2>&1 | head -5
+mix escript.build 2>&1
 echo "        ✓ shazam escript built"
 
 # ── Step 3: Install to ~/bin ───────────────────────────────

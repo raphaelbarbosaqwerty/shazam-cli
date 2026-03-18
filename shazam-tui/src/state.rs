@@ -81,6 +81,9 @@ pub struct AppState {
     pub image_count: usize,
     pub attachments: Vec<Attachment>,
 
+    // Persistent history
+    pub history_file: Option<String>,
+
     // Running flag
     pub running: bool,
 }
@@ -130,6 +133,7 @@ impl Default for AppState {
             paste_count: 0,
             image_count: 0,
             attachments: Vec::new(),
+            history_file: None,
             running: true,
         }
     }

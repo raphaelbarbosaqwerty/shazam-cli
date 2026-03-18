@@ -51,6 +51,11 @@ fn main() -> io::Result<()> {
 
     let mut state = AppState::default();
 
+    // Load persistent command history
+    let history_path = dirs_or_home(".shazam/tui_history");
+    state.input_history = load_history(&history_path);
+    state.history_file = Some(history_path);
+
     // Channel for unified event handling
     let (tx, rx) = mpsc::channel::<AppEvent>();
 
@@ -350,6 +355,9 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                     let cmd = state.submit_input();
                     state.clear_attachments();
                     if !cmd.trim().is_empty() {
+                        if let Some(ref path) = state.history_file {
+                            save_history_line(path, &cmd);
+                        }
                         send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
                     }
                 }
@@ -512,6 +520,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/clear", "clear screen"),
     ("/help", "show help"),
     ("/quit", "exit shazam"),
+    ("/search ", "search tasks by title"),
+    ("/export", "export tasks to markdown"),
     ("/exit", "exit shazam"),
 ];
 
@@ -655,6 +665,32 @@ fn chrono_now() -> String {
     let minutes = (now % 3600) / 60;
     let seconds = now % 60;
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+}
+
+// ── Persistent History ─────────────────────────────────────────────
+
+fn dirs_or_home(relative: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    format!("{}/{}", home, relative)
+}
+
+fn load_history(path: &str) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(String::from)
+        .collect()
+}
+
+fn save_history_line(path: &str, line: &str) {
+    use std::io::Write;
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{}", line);
+    }
 }
 
 // ── Lightning Strike Animation ─────────────────────────────────────

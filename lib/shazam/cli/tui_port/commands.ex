@@ -50,6 +50,8 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/retry-task <id>    — Retry failed task",
       "/delete-task <id>   — Delete a task",
       "",
+      "/search <query>     — Search tasks by title",
+      "/export [filename]  — Export tasks to markdown",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
       "/exit               — Exit Shazam"
@@ -148,10 +150,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/tasks" <> rest, state) do
     args = String.trim(rest)
     if args == "--clear" do
+      company_name = Helpers.deep_get(state, [:company, :name])
       if Code.ensure_loaded?(Shazam.TaskBoard) do
-        Shazam.TaskBoard.clear_all()
+        tasks = Helpers.list_tasks(state)
+        Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
       end
-      Helpers.send_event(state.port, "system", "tasks_cleared", "All tasks cleared")
+      Helpers.send_event(state.port, "system", "tasks_cleared", "Tasks cleared for #{company_name}")
       Status.send_status(state)
     else
       tasks = Helpers.list_tasks(state)
@@ -162,7 +166,8 @@ defmodule Shazam.CLI.TuiPort.Commands do
           status: to_string(t.status),
           assigned_to: t.assigned_to,
           created_by: t.created_by,
-          created_at: format_task_time(t)
+          created_at: format_task_time(t),
+          result: if(is_binary(t.result), do: String.slice(t.result, 0..500), else: nil)
         }
       end)
       Helpers.send_json(state.port, %{type: "task_list", tasks: task_items})
@@ -712,6 +717,45 @@ defmodule Shazam.CLI.TuiPort.Commands do
       end
     end
     Status.send_status(state)
+    state
+  end
+
+  def handle_command("/search " <> query, state) do
+    query = String.trim(query)
+    tasks = Helpers.list_tasks(state)
+    matches = Enum.filter(tasks, fn t ->
+      String.contains?(String.downcase(t.title || ""), String.downcase(query))
+    end)
+    task_items = Enum.map(matches, fn t ->
+      %{
+        id: t.id,
+        title: t.title || "",
+        status: to_string(t.status),
+        assigned_to: t.assigned_to,
+        created_by: t.created_by,
+        created_at: format_task_time(t),
+        result: if(is_binary(t.result), do: String.slice(t.result, 0..500), else: nil)
+      }
+    end)
+    Helpers.send_json(state.port, %{type: "task_list", tasks: task_items})
+    state
+  end
+
+  def handle_command("/export" <> rest, state) do
+    filename = case String.trim(rest) do
+      "" -> "shazam-export-#{Date.to_string(Date.utc_today())}.md"
+      name -> name
+    end
+    tasks = Helpers.list_tasks(state)
+    content = Enum.map_join(tasks, "\n\n---\n\n", fn t ->
+      status = to_string(t.status)
+      agent = t.assigned_to || "unassigned"
+      result = if is_binary(t.result), do: "\n\n#{t.result}", else: ""
+      "## #{t.title}\n\n**Status:** #{status} | **Agent:** #{agent} | **ID:** #{t.id}#{result}"
+    end)
+    header = "# Shazam Export — #{Date.to_string(Date.utc_today())}\n\n"
+    File.write!(filename, header <> content)
+    Helpers.send_event(state.port, "system", "info", "Exported #{length(tasks)} tasks to #{filename}")
     state
   end
 

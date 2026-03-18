@@ -56,13 +56,14 @@ defmodule Shazam.CLI.Repl do
 
     # Boot OTP (lightweight — no company started yet)
     Application.put_env(:shazam, :port, port)
-    :logger.set_primary_config(:level, :error)
+
+    # Suppress ALL logs before starting OTP apps — prevents [TaskBoard],
+    # [RalphLoop], [SessionPool] etc. from leaking into the TUI terminal.
     Application.ensure_all_started(:logger)
-    Logger.configure(level: :error)
-    Application.ensure_all_started(:shazam)
-    # Keep console logs suppressed during REPL — we render our own output
     Logger.configure(level: :none)
     :logger.set_primary_config(:level, :none)
+
+    Application.ensure_all_started(:shazam)
 
     # Fresh start: clear old tasks and companies from previous projects
     clear_previous_session(company_name)
@@ -1490,43 +1491,25 @@ defmodule Shazam.CLI.Repl do
   end
 
   defp clear_previous_session(company_name) do
-    # Clear all tasks from previous projects
-    if Code.ensure_loaded?(Shazam.TaskBoard) do
-      try do
-        Shazam.TaskBoard.clear_all()
-      catch
-        _, _ -> :ok
-      end
-    end
+    # Clear tasks only for the current company (other projects' tasks remain)
+    clear_tasks_for_company(company_name)
 
-    # Stop any running companies/RalphLoops from restored state
+    # Stop only the current company's RalphLoop (other projects' loops remain)
     if Code.ensure_loaded?(Shazam.RalphLoop) do
       try do
-        # Find and stop all existing RalphLoops
-        Registry.select(Shazam.RalphLoopRegistry, [{{:"$1", :"$2", :"$3"}, [], [:"$1"]}])
-        |> Enum.each(fn name ->
-          try do
-            Shazam.RalphLoop.stop(name)
-          catch
-            _, _ -> :ok
-          end
-        end)
+        if Shazam.RalphLoop.exists?(company_name) do
+          Shazam.RalphLoop.stop(company_name)
+        end
       catch
         _, _ -> :ok
       end
     end
 
-    # Clear old company data from store for this workspace
+    # Clear store data only for the current company
     if Code.ensure_loaded?(Shazam.Store) do
       try do
-        Shazam.Store.list_keys("company:")
-        |> Enum.each(fn key -> Shazam.Store.delete(key) end)
-        Shazam.Store.delete("company")
+        Shazam.Store.delete("company:#{company_name}")
         Shazam.Store.delete("tasks:#{company_name}")
-
-        # Clear all task keys
-        Shazam.Store.list_keys("tasks:")
-        |> Enum.each(fn key -> Shazam.Store.delete(key) end)
       catch
         _, _ -> :ok
       end
@@ -1536,6 +1519,17 @@ defmodule Shazam.CLI.Repl do
     if Code.ensure_loaded?(Shazam.Metrics) do
       try do
         Shazam.Metrics.reset()
+      catch
+        _, _ -> :ok
+      end
+    end
+  end
+
+  defp clear_tasks_for_company(company_name) do
+    if Code.ensure_loaded?(Shazam.TaskBoard) do
+      try do
+        tasks = Shazam.TaskBoard.list(%{company: company_name})
+        Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
       catch
         _, _ -> :ok
       end
