@@ -19,6 +19,14 @@ defmodule Shazam.CLI.YamlParser do
     domains = data["domains"] || %{}
     agents_map = data["agents"] || %{}
 
+    workspaces_raw = data["workspaces"] || %{}
+    workspaces = Enum.reduce(workspaces_raw, %{}, fn {name, config}, acc ->
+      Map.put(acc, name, %{
+        path: config["path"],
+        domains: config["domains"] || []
+      })
+    end)
+
     agents = build_agents(agents_map, domains)
 
     # Validate structural requirements
@@ -36,6 +44,7 @@ defmodule Shazam.CLI.YamlParser do
         agents: agents,
         domain_config: domain_config,
         workspace: company["workspace"],
+        workspaces: workspaces,
         ralph_config: ralph_config,
         tech_stack: tech_stack
       }}
@@ -66,6 +75,7 @@ defmodule Shazam.CLI.YamlParser do
         role: config["role"] || "Agent",
         supervisor: supervisor,
         domain: domain,
+        workspace: config["workspace"],
         budget: config["budget"] || 100_000,
         heartbeat_interval: config["heartbeat_interval"] || 60_000,
         model: config["model"],
@@ -257,7 +267,27 @@ defmodule Shazam.CLI.YamlParser do
       "\n# Tech stack — shared with all agents as project context\n# tech_stack:\n#   language: Elixir\n#   framework: Phoenix\n#   database: PostgreSQL\n#   frontend: Flutter\n#   notes: |\n#     Additional context about the project stack\n"
     end
 
-    company <> domains <> agents <> config_section <> tech_stack_section
+    workspaces_section = if config[:workspaces] && map_size(config.workspaces) > 0 do
+      ws_lines = config.workspaces
+        |> Enum.map(fn {name, ws} ->
+          path = ws[:path] || ws["path"] || ""
+          domains_list = ws[:domains] || ws["domains"] || []
+          lines = ["  #{name}:", "    path: #{quote_str(path)}"]
+          lines = if domains_list != [] do
+            dl = domains_list |> Enum.map(&"      - #{quote_str(&1)}") |> Enum.join("\n")
+            lines ++ ["    domains:\n#{dl}"]
+          else
+            lines
+          end
+          Enum.join(lines, "\n")
+        end)
+        |> Enum.join("\n")
+      "\nworkspaces:\n#{ws_lines}\n"
+    else
+      ""
+    end
+
+    company <> domains <> workspaces_section <> agents <> config_section <> tech_stack_section
   end
 
   defp quote_str(s) when is_binary(s) do

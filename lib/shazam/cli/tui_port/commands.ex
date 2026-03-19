@@ -52,6 +52,7 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "",
       "/search <query>     — Search tasks by title",
       "/export [filename]  — Export tasks to markdown",
+      "/workspaces         — List configured workspaces (multi-repo)",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
       "",
@@ -1011,6 +1012,20 @@ defmodule Shazam.CLI.TuiPort.Commands do
         Process.exit(pid, :kill)
         :ok
     end
+  end
+
+  def handle_command("/workspaces", state) do
+    workspaces = Application.get_env(:shazam, :workspaces, %{})
+    if workspaces == %{} do
+      Helpers.send_event(state.port, "system", "info", "No workspaces configured. Add a 'workspaces' section to shazam.yaml")
+    else
+      Enum.each(workspaces, fn {name, config} ->
+        path = Map.get(config, :path) || Map.get(config, "path", "")
+        exists = if File.dir?(path), do: "✓", else: "✗"
+        Helpers.send_event(state.port, "system", "info", "  #{exists} #{name}: #{path}")
+      end)
+    end
+    state
   end
 
   def handle_command("/" <> cmd, state) do

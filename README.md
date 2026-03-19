@@ -78,6 +78,7 @@ You (CEO) ──> describe task in natural language
 | **Task detail view** | Select a task in `/tasks` to see full result output |
 | **Markdown task files** | Tasks persist as .md files in .shazam/tasks/ — version-controlled, human-readable |
 | **PR Reviewer** | Review PRs with full codebase context, learn from team review patterns |
+| **Multi-repo workspaces** | Agents work across multiple repos simultaneously (backend + frontend + mobile) |
 
 ---
 
@@ -452,6 +453,7 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/review --post <task_id>` | Post completed review to GitHub with inline comments |
 | `/review --check <pr>` | Verify if previous review comments were addressed |
 | `/review --resolve <pr>` | Resolve all conversation threads on a PR |
+| `/workspaces` | List configured workspaces (multi-repo) |
 | `/review --learn` | Learn patterns from merged PR reviews |
 | `/review --patterns` | Show learned review patterns |
 | `/quit` | Exit Shazam |
@@ -820,6 +822,49 @@ Quickly create entire teams with one command:
 
 # Create a research team: 2 devs + researcher
 /team create api --devs 2 --researcher
+```
+
+### Multi-Repo Workspaces
+
+Work across multiple repositories simultaneously. Each agent runs in its own workspace:
+
+```yaml
+workspaces:
+  backend:
+    path: /home/user/projects/backend-api
+    domains: ["lib/", "src/"]
+  frontend:
+    path: /home/user/projects/frontend-web
+    domains: ["src/", "components/"]
+  mobile:
+    path: /home/user/projects/mobile-app
+    domains: ["lib/", "src/"]
+
+agents:
+  pm:
+    role: Project Manager
+    budget: 200000
+
+  backend_dev:
+    role: Senior Developer
+    supervisor: pm
+    workspace: backend
+
+  frontend_dev:
+    role: Senior Developer
+    supervisor: pm
+    workspace: frontend
+
+  mobile_dev:
+    role: Senior Developer
+    supervisor: pm
+    workspace: mobile
+```
+
+When you say "Add pagination to the users API and update frontend table and mobile list", the PM assigns subtasks to each agent in their respective repo.
+
+```
+/workspaces    — List configured workspaces and check paths
 ```
 
 ---

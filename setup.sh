@@ -121,9 +121,17 @@ echo ""
 if echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
   echo -e "${GREEN}✓${NC} ${INSTALL_DIR} is in your PATH"
 else
-  echo -e "${YELLOW}!${NC} Add this to your shell profile (~/.zshrc or ~/.bashrc):"
   echo ""
-  echo -e "    export PATH=\"\$HOME/bin:\$PATH\""
+  echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
+  echo -e "${RED}║  ${YELLOW}IMPORTANT: ${NC}${RED}Add ~/bin to your PATH to use shazam!            ║${NC}"
+  echo -e "${RED}║                                                              ║${NC}"
+  echo -e "${RED}║  ${NC}Run this command now:${RED}                                        ║${NC}"
+  echo -e "${RED}║                                                              ║${NC}"
+  echo -e "${RED}║  ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc${NC}${RED}             ║${NC}"
+  echo -e "${RED}║  ${GREEN}source ~/.zshrc${NC}${RED}                                                ║${NC}"
+  echo -e "${RED}║                                                              ║${NC}"
+  echo -e "${RED}║  ${DIM}(use ~/.bashrc if you use bash instead of zsh)${NC}${RED}              ║${NC}"
+  echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
   echo ""
 fi
 

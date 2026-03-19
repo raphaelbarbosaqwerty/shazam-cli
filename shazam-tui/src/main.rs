@@ -524,6 +524,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/quit", "exit shazam"),
     ("/search ", "search tasks by title"),
     ("/export", "export tasks to markdown"),
+    ("/workspaces", "list configured workspaces"),
     ("/review ", "review a PR"),
     ("/review --post ", "post review to GitHub"),
     ("/review --check ", "verify if changes were addressed"),

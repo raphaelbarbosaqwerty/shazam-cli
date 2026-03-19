@@ -73,6 +73,11 @@ defmodule Shazam.CLI.Repl do
     Application.put_env(:shazam, :workspace, workspace)
     Shazam.Store.save("workspace", %{"path" => workspace})
 
+    # Set workspaces for multi-repo support
+    if config[:workspaces] do
+      Application.put_env(:shazam, :workspaces, config.workspaces)
+    end
+
     # Set tech_stack if present in config
     if config[:tech_stack], do: Application.put_env(:shazam, :tech_stack, config.tech_stack)
 
