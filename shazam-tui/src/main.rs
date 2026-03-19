@@ -511,6 +511,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/agent edit ", "edit agent"),
     ("/agent remove ", "remove agent"),
     ("/agent presets", "list available presets"),
+    ("/agents --init", "generate .md config files"),
     ("/team create ", "create team for domain"),
     ("/team templates", "show team template help"),
     ("/dashboard", "agent dashboard"),

@@ -38,6 +38,7 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/agent edit <name>  — Edit agent (--role, --domain, --budget, --model)",
       "/agent remove <name>— Remove agent",
       "/agent presets      — List available agent presets",
+      "/agents --init      — Generate .md config files for existing agents",
       "",
       "Team Templates:",
       "/team create <domain> — Create team (--devs N, --qa N, --designer, --researcher)",
@@ -590,6 +591,44 @@ defmodule Shazam.CLI.TuiPort.Commands do
       agents = Shazam.Company.get_agents(state.company.name)
       tree_text = Helpers.format_org_tree(agents)
       Helpers.send_event(state.port, "system", "org_tree", tree_text)
+    end
+    state
+  end
+
+  def handle_command("/agents --init", state) do
+    agents = Helpers.deep_get(state, [:company, :agents]) ||
+             Helpers.deep_get(state, [:company, :config, :agents]) || []
+
+    if agents == [] do
+      Helpers.send_event(state.port, "system", "error", "No agents configured")
+    else
+      existing = Shazam.AgentConfig.list_agents()
+      new_count = 0
+
+      created = Enum.reduce(agents, 0, fn agent, count ->
+        name = agent[:name] || agent.name
+        if name in existing do
+          count
+        else
+          Shazam.AgentConfig.write_agent(name, %{
+            role: agent[:role] || "Agent",
+            model: agent[:model],
+            budget: agent[:budget] || 100_000,
+            tools: agent[:tools] || [],
+            system_prompt: agent[:system_prompt]
+          })
+          count + 1
+        end
+      end)
+
+      skipped = length(agents) - created
+      Helpers.send_event(state.port, "system", "info",
+        "Agent configs: #{created} created, #{skipped} already exist in .shazam/agents/")
+
+      if created > 0 do
+        Helpers.send_event(state.port, "system", "info",
+          "Edit the .md files in .shazam/agents/ to customize agent prompts and behavior")
+      end
     end
     state
   end
