@@ -83,6 +83,62 @@ defmodule Shazam.PRReviewer do
     end
   end
 
+  @doc "Resolve all review threads on a PR (mark conversations as resolved)."
+  def resolve_threads(pr_number) do
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+
+    case check_gh() do
+      {:error, _} = err -> err
+      :ok ->
+        try do
+          # Get repo name
+          {repo, 0} = System.cmd("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cd: workspace, stderr_to_stdout: true)
+          repo = String.trim(repo)
+
+          # Get all review threads via GraphQL
+          query = """
+          query {
+            repository(owner: "#{String.split(repo, "/") |> List.first()}", name: "#{String.split(repo, "/") |> List.last()}") {
+              pullRequest(number: #{pr_number}) {
+                reviewThreads(first: 100) {
+                  nodes {
+                    id
+                    isResolved
+                  }
+                }
+              }
+            }
+          }
+          """
+
+          case System.cmd("gh", ["api", "graphql", "-f", "query=#{query}"], cd: workspace, stderr_to_stdout: true) do
+            {result, 0} ->
+              case Jason.decode(result) do
+                {:ok, %{"data" => %{"repository" => %{"pullRequest" => %{"reviewThreads" => %{"nodes" => threads}}}}}} ->
+                  unresolved = Enum.filter(threads, fn t -> !t["isResolved"] end)
+
+                  Enum.each(unresolved, fn thread ->
+                    mutation = """
+                    mutation {
+                      resolveReviewThread(input: {threadId: "#{thread["id"]}"}) {
+                        thread { id }
+                      }
+                    }
+                    """
+                    System.cmd("gh", ["api", "graphql", "-f", "query=#{mutation}"], cd: workspace, stderr_to_stdout: true)
+                  end)
+
+                  {:ok, length(unresolved)}
+                _ -> {:error, "Failed to parse threads"}
+              end
+            {err, _} -> {:error, err}
+          end
+        catch
+          kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
+        end
+    end
+  end
+
   @doc "Get current learned patterns."
   def patterns do
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
@@ -125,7 +181,162 @@ defmodule Shazam.PRReviewer do
     4. Suggest a fix
 
     End with a verdict: APPROVE, REQUEST_CHANGES, or COMMENT.
+
+    IMPORTANT: End your review with a JSON block in this exact format:
+
+    ```json
+    {
+      "summary": "Brief overall assessment",
+      "verdict": "APPROVE" or "REQUEST_CHANGES" or "COMMENT",
+      "comments": [
+        {
+          "path": "lib/auth.ex",
+          "line": 45,
+          "body": "blocker: Description here"
+        },
+        {
+          "path": "lib/auth.ex",
+          "start_line": 10,
+          "line": 15,
+          "body": "suggestion: This whole block can be simplified\\n\\n```suggestion\\ndefp validate(token) do\\n  with {:ok, claims} <- decode(token),\\n       :ok <- check_expiry(claims) do\\n    {:ok, claims}\\n  end\\nend\\n```"
+        },
+        {
+          "path": "lib/router.ex",
+          "body": "thought: This file is getting large. Consider splitting routes into sub-modules in a follow-up."
+        }
+      ]
+    }
+    ```
+
+    JSON field rules:
+    - "path" (required): exact file path from the diff
+    - "line" (required for inline): the line number in the NEW file (right side of diff)
+    - "start_line" (optional): for multi-line comments, the first line of the range
+    - "body" (required): the comment text with tag prefix (blocker:, nit:, suggestion:, etc.)
+    - If "line" is omitted, it becomes a file-level comment (about the file in general)
+    - For suggested changes, include a ```suggestion``` block inside the body (escaped newlines in JSON)
+    - GitHub renders suggestion blocks with a one-click "Apply" button
     """
+  end
+
+  @doc "Post a review to GitHub with inline comments."
+  def post_review(pr_number, review_json, workspace) do
+    try do
+      case parse_review_json(review_json) do
+        {:ok, %{"summary" => summary, "verdict" => verdict, "comments" => comments}} ->
+          event = case verdict do
+            "APPROVE" -> "APPROVE"
+            "REQUEST_CHANGES" -> "REQUEST_CHANGES"
+            _ -> "COMMENT"
+          end
+
+          # Split into inline comments and file-level comments
+          {inline_comments, file_comments} = Enum.split_with(comments, fn c ->
+            c["line"] != nil
+          end)
+
+          # Build inline comments with multi-line support
+          api_comments = Enum.map(inline_comments, fn c ->
+            comment = %{
+              path: c["path"],
+              line: c["line"],
+              body: c["body"]
+            }
+
+            # Add start_line for multi-line comments
+            comment = if c["start_line"] && c["start_line"] != c["line"] do
+              comment
+              |> Map.put(:start_line, c["start_line"])
+              |> Map.put(:start_side, "RIGHT")
+              |> Map.put(:side, "RIGHT")
+            else
+              comment
+            end
+
+            comment
+          end)
+
+          # Append file-level comments to the summary
+          file_notes = file_comments
+            |> Enum.map(fn c -> "**#{c["path"]}**: #{c["body"]}" end)
+            |> Enum.join("\n\n")
+
+          full_summary = if file_notes != "" do
+            summary <> "\n\n---\n\n### File-level notes\n\n" <> file_notes
+          else
+            summary
+          end
+
+          payload = %{
+            body: full_summary,
+            event: event,
+            comments: api_comments
+          }
+
+          payload_json = Jason.encode!(payload)
+
+          # Get repo info from gh
+          case System.cmd("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cd: workspace, stderr_to_stdout: true) do
+            {repo, 0} ->
+              repo = String.trim(repo)
+              case System.cmd("gh", ["api", "repos/#{repo}/pulls/#{pr_number}/reviews", "--method", "POST", "--input", "-"],
+                cd: workspace, stderr_to_stdout: true, input: payload_json) do
+                {_result, 0} -> {:ok, %{verdict: event, comments: length(comments)}}
+                {err, _} -> {:error, "Failed to post review: #{err}"}
+              end
+            {err, _} -> {:error, "Failed to get repo info: #{err}"}
+          end
+
+        {:error, reason} -> {:error, reason}
+      end
+    catch
+      kind, reason ->
+        {:error, "Review posting failed: #{inspect(kind)}: #{inspect(reason)}"}
+    end
+  end
+
+  @doc "Check if previous review comments have been addressed."
+  def check_review(pr_number, opts \\ []) do
+    _opts = opts
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+
+    case check_gh() do
+      {:error, _} = err -> err
+      :ok ->
+        try do
+          # Get previous review comments
+          case System.cmd("gh", ["api", "repos/{owner}/{repo}/pulls/#{pr_number}/reviews", "--jq", ".[].body"], cd: workspace, stderr_to_stdout: true) do
+            {reviews, 0} ->
+              # Get current diff
+              case fetch_pr_diff(pr_number, workspace) do
+                {:ok, diff} ->
+                  {:ok, %{previous_reviews: reviews, current_diff: diff}}
+                err -> err
+              end
+            {err, _} -> {:error, err}
+          end
+        catch
+          kind, reason ->
+            {:error, "Check review failed: #{inspect(kind)}: #{inspect(reason)}"}
+        end
+    end
+  end
+
+  defp parse_review_json(text) do
+    # Extract JSON block from the agent output
+    case Regex.run(~r/```json\s*\n(.*?)\n```/s, text) do
+      [_, json] ->
+        case Jason.decode(json) do
+          {:ok, parsed} -> {:ok, parsed}
+          {:error, _} -> {:error, "Invalid JSON in review output"}
+        end
+      nil ->
+        # Try parsing the whole text as JSON
+        case Jason.decode(text) do
+          {:ok, parsed} -> {:ok, parsed}
+          {:error, _} -> {:error, "No JSON review block found in agent output"}
+        end
+    end
   end
 
   # ── Private ──────────────────────────────────────────────

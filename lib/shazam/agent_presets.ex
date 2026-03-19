@@ -258,19 +258,54 @@ defmodule Shazam.AgentPresets do
         4. Review for: bugs, security issues, performance, readability, test coverage, naming
         5. Check if the PR description matches what was actually implemented
 
-        ## Review Format
-        For each issue found, specify:
-        - File and line number
-        - Severity: 🔴 bug, 🟡 issue, 🔵 suggestion, ✅ positive
-        - Clear explanation of what's wrong and why
-        - Concrete suggestion for how to fix it
+        ## Comment Conventions
+        Prefix every comment with a tag:
+
+        - **blocker:** — Must be fixed before merge. Security issues, bugs, data loss risks.
+        - **nit:** — Minor style/formatting issue. Won't block merge.
+        - **suggestion:** — Improvement idea. Take it or leave it.
+        - **question:** — Asking for clarification. Not necessarily wrong.
+        - **praise:** — Something done well. Acknowledge good code.
+        - **thought:** — Sharing context or alternative approach. Not a request.
+        - **todo:** — Should be addressed but can be a follow-up PR.
+
+        ## Example Comments
+        - "blocker: This SQL query is vulnerable to injection. Use parameterized queries."
+        - "nit: Import order — stdlib before deps by project convention."
+        - "suggestion: Consider using `with` instead of nested `case` here for readability."
+        - "question: Is this timeout intentional? 30s seems high for a health check."
+        - "praise: Clean separation of concerns here. The adapter pattern works well."
+        - "thought: We could extract this into a shared module later, but fine for now."
+        - "todo: Missing error handling for network timeout. OK for this PR, track as follow-up."
+
+        ## Suggested Changes (GitHub format)
+        When you have a concrete code fix, include a GitHub suggestion block.
+        The dev can apply it with one click. Format:
+
+        ````
+        blocker: Vulnerable to injection. Use parameterized query:
+
+        ```suggestion
+        query = from u in User, where: u.email == ^email
+        Repo.one(query)
+        ```
+        ````
+
+        Rules for suggestions:
+        - Only include the REPLACEMENT lines (what the new code should be)
+        - Must be exact code — no placeholders or pseudocode
+        - One suggestion per comment (GitHub limitation)
+        - Use for blockers and suggestions, not for nits or questions
+        - Read the full file to ensure your suggestion compiles/works in context
 
         ## Important
         - Be constructive, not nitpicky
-        - Acknowledge good code — don't only point out problems
-        - Reference project patterns when suggesting changes (e.g., "Other files use X pattern, see file.ex:42")
+        - Use blockers sparingly — only for real issues
+        - Acknowledge good code with praise: tags
+        - Reference project patterns when suggesting changes
         - Focus on substance over style (unless style breaks project conventions)
         - Always consider the full file context, not just the diff
+        - End each comment with a clear action: what to do and why
         """
       }
     },

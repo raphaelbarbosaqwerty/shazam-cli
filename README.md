@@ -449,6 +449,10 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/help` | Show help |
 | `/review <pr>` | Review a pull request (number or URL) |
 | `/review --learn` | Learn patterns from merged PR reviews |
+| `/review --post <task_id>` | Post completed review to GitHub with inline comments |
+| `/review --check <pr>` | Verify if previous review comments were addressed |
+| `/review --resolve <pr>` | Resolve all conversation threads on a PR |
+| `/review --learn` | Learn patterns from merged PR reviews |
 | `/review --patterns` | Show learned review patterns |
 | `/quit` | Exit Shazam |
 

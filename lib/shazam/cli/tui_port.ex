@@ -182,7 +182,7 @@ defmodule Shazam.CLI.TuiPort do
 
   # ── Backend Event Handler ─────────────────────────────────────
 
-  @silent_events ~w(streaming chunk token delta heartbeat ping metrics_updated agent_output modules_claimed)
+  @silent_events ~w(streaming chunk token delta heartbeat ping metrics_updated modules_claimed)
 
   defp handle_backend_event(event, state) do
     event_type = event[:event] || event["event"] || "unknown"
@@ -190,23 +190,45 @@ defmodule Shazam.CLI.TuiPort do
     unless event_type in @silent_events do
       task_id = event[:task_id] || event["task_id"]
 
-      # Resolve agent and title from TaskBoard if not provided
-      {agent, title} = resolve_event_details(event, task_id)
+      # Handle agent_output specially — show tool_use and text, skip text_delta
+      if event_type == "agent_output" do
+        agent = event[:agent] || event["agent"] || ""
+        output_type = event[:type] || event["type"] || ""
+        content = event[:content] || event["content"] || ""
 
-      # Skip events with no useful info
-      unless agent == "" and title == "" do
-        Helpers.send_event(state.port, agent, event_type, to_string(title))
-      end
+        case output_type do
+          "tool_use" ->
+            # Show which tool the agent is using (truncated)
+            Helpers.send_event(state.port, agent, "tool_use", String.slice(to_string(content), 0..120))
+          "text" ->
+            # Show agent thinking/output (first line only)
+            first_line = content |> to_string() |> String.split("\n") |> List.first("")
+            if String.length(first_line) > 5 do
+              Helpers.send_event(state.port, agent, "agent_output", String.slice(first_line, 0..120))
+            end
+          _ ->
+            # Skip text_delta and other noisy types
+            :ok
+        end
+      else
+        # Resolve agent and title from TaskBoard if not provided
+        {agent, title} = resolve_event_details(event, task_id)
 
-      # If it's an approval request, also send approval message
-      if event_type == "task_awaiting_approval" do
-        Helpers.send_json(state.port, %{
-          type: "approval",
-          task_id: task_id || "",
-          title: to_string(title),
-          agent: agent,
-          description: event[:description] || event["description"]
-        })
+        # Skip events with no useful info
+        unless agent == "" and title == "" do
+          Helpers.send_event(state.port, agent, event_type, to_string(title))
+        end
+
+        # If it's an approval request, also send approval message
+        if event_type == "task_awaiting_approval" do
+          Helpers.send_json(state.port, %{
+            type: "approval",
+            task_id: task_id || "",
+            title: to_string(title),
+            agent: agent,
+            description: event[:description] || event["description"]
+          })
+        end
       end
     end
 
