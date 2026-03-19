@@ -1496,9 +1496,6 @@ defmodule Shazam.CLI.Repl do
   end
 
   defp clear_previous_session(company_name) do
-    # Clear tasks only for the current company (other projects' tasks remain)
-    clear_tasks_for_company(company_name)
-
     # Stop only the current company's RalphLoop (other projects' loops remain)
     if Code.ensure_loaded?(Shazam.RalphLoop) do
       try do
@@ -1510,17 +1507,7 @@ defmodule Shazam.CLI.Repl do
       end
     end
 
-    # Clear store data only for the current company
-    if Code.ensure_loaded?(Shazam.Store) do
-      try do
-        Shazam.Store.delete("company:#{company_name}")
-        Shazam.Store.delete("tasks:#{company_name}")
-      catch
-        _, _ -> :ok
-      end
-    end
-
-    # Reset metrics
+    # Reset metrics for a fresh session view
     if Code.ensure_loaded?(Shazam.Metrics) do
       try do
         Shazam.Metrics.reset()
@@ -1528,16 +1515,12 @@ defmodule Shazam.CLI.Repl do
         _, _ -> :ok
       end
     end
-  end
 
-  defp clear_tasks_for_company(company_name) do
-    if Code.ensure_loaded?(Shazam.TaskBoard) do
-      try do
-        tasks = Shazam.TaskBoard.list(%{company: company_name})
-        Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
-      catch
-        _, _ -> :ok
-      end
+    # Restore tasks from .shazam/tasks/ markdown files
+    try do
+      Shazam.TaskFiles.sync_from_files()
+    catch
+      _, _ -> :ok
     end
   end
 

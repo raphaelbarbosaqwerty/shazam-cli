@@ -189,9 +189,15 @@ defmodule Shazam.CLI.TuiPort.Commands do
         company_name = Helpers.deep_get(state, [:company, :name])
         if Code.ensure_loaded?(Shazam.TaskBoard) do
           tasks = Helpers.list_tasks(state)
-          Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
+          # Move completed/failed tasks to ETS only (files stay in .shazam/tasks/)
+          # Only clear from runtime view, not from disk
+          Enum.each(tasks, fn t ->
+            if t.status in [:pending, :in_progress, :awaiting_approval] do
+              Shazam.TaskBoard.delete(t.id)
+            end
+          end)
         end
-        Helpers.send_event(state.port, "system", "tasks_cleared", "Tasks cleared for #{company_name}")
+        Helpers.send_event(state.port, "system", "tasks_cleared", "Active tasks cleared (completed tasks preserved)")
         Status.send_status(state)
 
       true ->
