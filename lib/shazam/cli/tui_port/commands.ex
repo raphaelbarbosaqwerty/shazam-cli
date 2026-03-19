@@ -54,6 +54,7 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/search <query>     — Search tasks by title",
       "/export [filename]  — Export tasks to markdown",
       "/workspaces         — List configured workspaces (multi-repo)",
+      "/memory             — Show memory usage breakdown",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
       "",
@@ -1058,6 +1059,33 @@ defmodule Shazam.CLI.TuiPort.Commands do
         Process.exit(pid, :kill)
         :ok
     end
+  end
+
+  def handle_command("/memory", state) do
+    mem = :erlang.memory()
+    total_mb = div(mem[:total], 1_048_576)
+    processes_mb = div(mem[:processes], 1_048_576)
+    ets_mb = div(mem[:ets], 1_048_576)
+    atom_mb = div(mem[:atom], 1_048_576)
+    binary_mb = div(mem[:binary], 1_048_576)
+    system_mb = div(mem[:system], 1_048_576)
+
+    process_count = :erlang.system_info(:process_count)
+
+    lines = [
+      "Memory Usage:",
+      "  Total:     #{total_mb} MB",
+      "  Processes: #{processes_mb} MB (#{process_count} processes)",
+      "  ETS:       #{ets_mb} MB",
+      "  Binary:    #{binary_mb} MB",
+      "  Atoms:     #{atom_mb} MB",
+      "  System:    #{system_mb} MB"
+    ]
+
+    Enum.each(lines, fn line ->
+      Helpers.send_event(state.port, "system", "info", line)
+    end)
+    state
   end
 
   def handle_command("/workspaces", state) do

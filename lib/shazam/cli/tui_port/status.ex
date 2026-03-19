@@ -12,6 +12,8 @@ defmodule Shazam.CLI.TuiPort.Status do
     company_name = Helpers.deep_get(state, [:company, :name]) || "Shazam"
     ralph_status = get_ralph_status(state)
 
+    memory_mb = div(:erlang.memory(:total), 1_048_576)
+
     Helpers.send_json(state.port, %{
       type: "status",
       company: company_name,
@@ -23,7 +25,8 @@ defmodule Shazam.CLI.TuiPort.Status do
       tasks_done: done,
       tasks_awaiting: awaiting,
       budget_used: budget_used,
-      budget_total: budget_total
+      budget_total: budget_total,
+      memory_mb: memory_mb
     })
   end
 

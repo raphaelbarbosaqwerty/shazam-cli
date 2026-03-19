@@ -205,6 +205,17 @@ fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         Style::default().fg(budget_color),
     ));
 
+    // Memory usage
+    let memory_mb = s.memory_mb.unwrap_or(0);
+    if memory_mb > 0 {
+        spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+        let mem_color = if memory_mb > 512 { Color::Red } else if memory_mb > 256 { Color::Yellow } else { Color::Green };
+        spans.push(Span::styled(
+            format!("Mem: {}MB ", memory_mb),
+            Style::default().fg(mem_color),
+        ));
+    }
+
     let line = Line::from(spans);
 
     let bar = Paragraph::new(line).style(

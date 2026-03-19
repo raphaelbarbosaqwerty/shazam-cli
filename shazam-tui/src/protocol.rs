@@ -48,6 +48,7 @@ pub struct StatusMsg {
     pub tasks_awaiting: Option<u32>,
     pub budget_used: Option<u64>,
     pub budget_total: Option<u64>,
+    pub memory_mb: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

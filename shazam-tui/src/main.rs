@@ -526,6 +526,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/search ", "search tasks by title"),
     ("/export", "export tasks to markdown"),
     ("/workspaces", "list configured workspaces"),
+    ("/memory", "show memory usage"),
     ("/review ", "review a PR"),
     ("/review --post ", "post review to GitHub"),
     ("/review --check ", "verify if changes were addressed"),

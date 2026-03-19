@@ -115,6 +115,7 @@ impl Default for AppState {
                 tasks_awaiting: Some(0),
                 budget_used: Some(0),
                 budget_total: Some(0),
+                memory_mb: Some(0),
             },
             help_scroll: 0,
             agent_list: Vec::new(),
