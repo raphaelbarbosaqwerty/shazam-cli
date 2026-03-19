@@ -77,6 +77,7 @@ You (CEO) ──> describe task in natural language
 | **Multi-project** | Each project directory gets isolated tasks, agents, and metrics |
 | **Task detail view** | Select a task in `/tasks` to see full result output |
 | **Markdown task files** | Tasks persist as .md files in .shazam/tasks/ — version-controlled, human-readable |
+| **PR Reviewer** | Review PRs with full codebase context, learn from team review patterns |
 
 ---
 
@@ -446,6 +447,9 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/export [file]` | Export tasks to markdown file |
 | `/clear` | Clear scroll region |
 | `/help` | Show help |
+| `/review <pr>` | Review a pull request (number or URL) |
+| `/review --learn` | Learn patterns from merged PR reviews |
+| `/review --patterns` | Show learned review patterns |
 | `/quit` | Exit Shazam |
 
 **Keyboard shortcuts:** `↑/↓` command history, `Tab` accept ghost text, `PgUp/PgDn` or mouse scroll events, `Enter` open action menu in `/tasks`, `Ctrl+C` exit, `ESC` close overlay. Command history is saved across sessions (`~/.shazam/tui_history`).
@@ -797,6 +801,7 @@ Shazam includes pre-configured agent templates for common roles:
 | `writer` | Technical Writer | Sonnet | Documentation |
 | `market_analyst` | Market Analyst | Sonnet | Market research |
 | `competitor_analyst` | Competitor Analyst | Sonnet | Competitive analysis |
+| `pr_reviewer` | PR Reviewer | Opus 4.6 | Code review with codebase context |
 
 ### Team Templates
 

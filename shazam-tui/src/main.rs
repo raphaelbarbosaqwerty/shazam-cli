@@ -524,6 +524,9 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/quit", "exit shazam"),
     ("/search ", "search tasks by title"),
     ("/export", "export tasks to markdown"),
+    ("/review ", "review a PR"),
+    ("/review --learn", ""),
+    ("/review --patterns", ""),
     ("/exit", "exit shazam"),
 ];
 

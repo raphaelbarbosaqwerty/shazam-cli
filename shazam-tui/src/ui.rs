@@ -1084,6 +1084,26 @@ fn draw_help_overlay(f: &mut Frame, area: Rect, state: &AppState) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
+            "PR Review",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  /review <pr> ", Style::default().fg(Color::Cyan)),
+            Span::raw("Review a pull request (number or URL)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  /review --learn ", Style::default().fg(Color::Cyan)),
+            Span::raw("Learn patterns from merged PR reviews"),
+        ]),
+        Line::from(vec![
+            Span::styled("  /review --patterns ", Style::default().fg(Color::Cyan)),
+            Span::raw("Show learned review patterns"),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
             "Task Actions",
             Style::default()
                 .fg(Color::Yellow)

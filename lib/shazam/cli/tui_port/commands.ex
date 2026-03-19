@@ -54,6 +54,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/export [filename]  — Export tasks to markdown",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
+      "",
+      "PR Review:",
+      "/review <pr>        — Review a pull request (number or URL)",
+      "/review --learn     — Learn patterns from recent merged PR reviews",
+      "/review --patterns  — Show learned review patterns",
+      "",
       "/exit               — Exit Shazam"
     ]
     Enum.each(commands, fn cmd ->
@@ -782,6 +788,79 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/clear", state) do
     Helpers.send_json(state.port, %{type: "clear"})
     state
+  end
+
+  def handle_command("/review " <> rest, state) do
+    args = String.trim(rest)
+    company_name = Helpers.deep_get(state, [:company, :name])
+
+    cond do
+      args == "--learn" ->
+        Helpers.send_event(state.port, "system", "info", "Learning from recent PR reviews...")
+        case Shazam.PRReviewer.learn() do
+          {:ok, count} ->
+            Helpers.send_event(state.port, "system", "info", "Learned #{count} patterns from merged PRs")
+          {:error, reason} ->
+            Helpers.send_event(state.port, "system", "error", "Failed to learn: #{inspect(reason)}")
+        end
+
+      args == "--patterns" ->
+        patterns = Shazam.PRReviewer.patterns()
+        if patterns == "" do
+          Helpers.send_event(state.port, "system", "info", "No review patterns learned yet. Run /review --learn")
+        else
+          lines = String.split(patterns, "\n") |> Enum.take(20)
+          Enum.each(lines, fn line ->
+            Helpers.send_event(state.port, "system", "info", line)
+          end)
+        end
+
+      true ->
+        # Review a specific PR
+        Helpers.send_event(state.port, "reviewer", "info", "Reviewing PR ##{args}...")
+
+        case Shazam.PRReviewer.review(args) do
+          {:ok, context} ->
+            prompt = Shazam.PRReviewer.build_review_prompt(context)
+
+            # Find or create reviewer agent
+            reviewer_profile = find_reviewer_agent(state)
+
+            # Execute via TaskBoard
+            if Code.ensure_loaded?(Shazam.TaskBoard) do
+              Shazam.TaskBoard.create(%{
+                title: "Review PR ##{args}",
+                assigned_to: reviewer_profile.name,
+                created_by: "human",
+                company: company_name,
+                description: prompt
+              })
+              Helpers.send_event(state.port, "reviewer", "task_created", "PR ##{args} review task created for #{reviewer_profile.name}")
+            end
+
+          {:error, reason} ->
+            Helpers.send_event(state.port, "system", "error", "Failed: #{inspect(reason)}")
+        end
+    end
+    Status.send_status(state)
+    state
+  end
+
+  defp find_reviewer_agent(state) do
+    agents = Helpers.deep_get(state, [:company, :agents]) ||
+             Helpers.deep_get(state, [:company, :config, :agents]) || []
+
+    case Enum.find(agents, fn a ->
+      role = String.downcase(a[:role] || "")
+      String.contains?(role, "review")
+    end) do
+      nil ->
+        # Use PM as fallback if no reviewer exists
+        pm_name = Helpers.find_pm_name(state)
+        %{name: pm_name, role: "Project Manager"}
+      agent ->
+        agent
+    end
   end
 
   def handle_command("/" <> cmd, state) do
