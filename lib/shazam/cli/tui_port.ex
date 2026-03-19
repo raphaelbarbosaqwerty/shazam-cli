@@ -66,46 +66,94 @@ defmodule Shazam.CLI.TuiPort do
   # ── Event Loop ────────────────────────────────────────────────
 
   defp loop(state) do
-    receive do
-      # Data from Rust TUI (user input)
-      {port, {:data, {:eol, json}}} when port == state.port ->
-        case Jason.decode(json) do
-          {:ok, msg} ->
-            state = handle_tui_message(msg, state)
-            loop(state)
+    try do
+      receive do
+        # Data from Rust TUI (user input)
+        {port, {:data, {:eol, json}}} when port == state.port ->
+          case Jason.decode(json) do
+            {:ok, msg} ->
+              new_state = try do
+                handle_tui_message(msg, state)
+              rescue
+                e ->
+                  log_crash("handle_tui_message rescue", e, __STACKTRACE__)
+                  try_send_error(state, inspect(e))
+                  state
+              catch
+                kind, reason ->
+                  log_crash("handle_tui_message #{kind}", reason)
+                  try_send_error(state, inspect(reason))
+                  state
+              end
+              loop(new_state)
 
-          {:error, _} ->
-            loop(state)
-        end
+            {:error, _} ->
+              loop(state)
+          end
 
-      # Port closed — only cleanup path (no duplicate)
-      {port, {:exit_status, _code}} when port == state.port ->
-        Helpers.cleanup(state)
+        # Port closed — only cleanup path (no duplicate)
+        {port, {:exit_status, _code}} when port == state.port ->
+          Helpers.cleanup(state)
 
-      # EventBus events from agents/ralph
-      {:event, event} ->
-        handle_backend_event(event, state)
+        # EventBus events from agents/ralph
+        {:event, event} ->
+          try do
+            handle_backend_event(event, state)
+          rescue
+            e -> log_crash("backend_event rescue", e, __STACKTRACE__)
+          catch
+            _, reason -> log_crash("backend_event catch", reason)
+          end
+          loop(state)
+
+        # Ignore normal exits from spawned processes
+        {:EXIT, _pid, :normal} ->
+          loop(state)
+
+        # Graceful shutdown (linked process died abnormally or Ctrl+C)
+        {:EXIT, _pid, reason} ->
+          log_crash("EXIT signal", reason)
+          try do
+            Helpers.send_json(state.port, %{type: "quit"})
+            Process.sleep(100)
+          catch
+            _, _ -> :ok
+          end
+          receive do
+            {port, {:exit_status, _}} when port == state.port -> :ok
+          after
+            500 -> :ok
+          end
+          Helpers.cleanup(state)
+
+        _other ->
+          loop(state)
+      end
+    rescue
+      e ->
+        log_crash("loop rescue", e, __STACKTRACE__)
+        try_send_error(state, inspect(e))
         loop(state)
-
-      # Graceful shutdown (linked process died or Ctrl+C from outside)
-      {:EXIT, _pid, _reason} ->
-        try do
-          Helpers.send_json(state.port, %{type: "quit"})
-          Process.sleep(100)
-        catch
-          _, _ -> :ok
-        end
-        # Don't call cleanup here — the Port exit_status message will handle it.
-        # Just wait for the exit_status message to arrive.
-        receive do
-          {port, {:exit_status, _}} when port == state.port -> :ok
-        after
-          500 -> :ok
-        end
-        Helpers.cleanup(state)
-
-      _other ->
+    catch
+      kind, reason ->
+        log_crash("loop #{kind}", reason)
+        try_send_error(state, inspect(reason))
         loop(state)
+    end
+  end
+
+  defp log_crash(context, error, stacktrace \\ nil) do
+    timestamp = Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d %H:%M:%S")
+    trace = if stacktrace, do: "\n#{Exception.format_stacktrace(stacktrace)}", else: ""
+    entry = "[#{timestamp}] #{context}: #{inspect(error, limit: 500)}#{trace}\n\n"
+    File.write("/tmp/shazam-crash.log", entry, [:append])
+  end
+
+  defp try_send_error(state, message) do
+    try do
+      Helpers.send_event(state.port, "system", "error", "Error: #{String.slice(message, 0..200)}")
+    catch
+      _, _ -> :ok
     end
   end
 

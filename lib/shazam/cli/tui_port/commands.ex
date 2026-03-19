@@ -91,22 +91,27 @@ defmodule Shazam.CLI.TuiPort.Commands do
       end
     end
 
+    # Wait for RalphLoop to register
+    wait_for_ralph(company_name, 10)
+
     # Apply ralph_config
-    if config[:ralph_config] do
+    if config[:ralph_config] && Shazam.RalphLoop.exists?(company_name) do
       rc = config.ralph_config
-      try do
+      safe_ralph_call(company_name, fn ->
         if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
         Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent] || 4)
-      rescue
-        _ -> :ok
-      end
+      end)
     end
 
     # Resume
-    case Shazam.RalphLoop.resume(company_name) do
-      {:ok, _} ->
-        Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
-      _ -> :ok
+    if Shazam.RalphLoop.exists?(company_name) do
+      safe_ralph_call(company_name, fn ->
+        case Shazam.RalphLoop.resume(company_name) do
+          {:ok, _} ->
+            Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
+          _ -> :ok
+        end
+      end)
     end
 
     # Subscribe to EventBus now that company is running
@@ -821,9 +826,13 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
           case Shazam.PRReviewer.review(args) do
             {:ok, context} ->
+              Helpers.send_event(state.port, "reviewer", "info", "Building review prompt (#{length(context.files)} files)...")
               prompt = Shazam.PRReviewer.build_review_prompt(context)
+              # Truncate prompt to avoid oversized tasks
+              prompt = String.slice(prompt, 0..15_000)
               reviewer_profile = find_reviewer_agent(state)
               reviewer_name = reviewer_profile[:name] || Helpers.find_pm_name(state)
+              Helpers.send_event(state.port, "reviewer", "info", "Assigning to #{reviewer_name}...")
 
               if Code.ensure_loaded?(Shazam.TaskBoard) do
                 Shazam.TaskBoard.create(%{
@@ -866,6 +875,42 @@ defmodule Shazam.CLI.TuiPort.Commands do
         %{name: pm_name, role: "Project Manager"}
       agent ->
         agent
+    end
+  end
+
+  # ── RalphLoop safety helpers ──────────────────────────────
+
+  defp wait_for_ralph(company_name, 0), do: :ok
+  defp wait_for_ralph(company_name, retries) do
+    if Shazam.RalphLoop.exists?(company_name) do
+      :ok
+    else
+      Process.sleep(200)
+      wait_for_ralph(company_name, retries - 1)
+    end
+  end
+
+  defp safe_ralph_call(_company_name, fun) do
+    # Use spawn + monitor instead of Task.async to avoid EXIT signals killing the TUI
+    ref = make_ref()
+    parent = self()
+    pid = spawn(fn ->
+      try do
+        result = fun.()
+        send(parent, {ref, :ok, result})
+      catch
+        kind, reason ->
+          send(parent, {ref, :error, {kind, reason}})
+      end
+    end)
+
+    receive do
+      {^ref, :ok, result} -> result
+      {^ref, :error, _} -> :ok
+    after
+      5_000 ->
+        Process.exit(pid, :kill)
+        :ok
     end
   end
 
