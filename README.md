@@ -595,9 +595,26 @@ You are a Senior Developer. You write clean, production-ready code.
 ```
 
 - `shazam init` creates `.md` files from presets automatically
+- `/agents --init` generates `.md` files for existing projects
 - Edit any `.md` to customize the agent's behavior, restrictions, or focus
 - Changes take effect on the next task (no restart needed)
 - If no `.md` exists, the hardcoded preset is used as fallback
+- Multiple agents can share the same `.md` via the `config:` field in YAML:
+
+```yaml
+agents:
+  senior_1:
+    role: Senior Developer
+    supervisor: pm
+    config: .shazam/agents/backend_dev.md   # custom config file
+
+  senior_2:
+    role: Senior Developer
+    supervisor: pm
+    config: .shazam/agents/backend_dev.md   # reuses same config!
+```
+
+**Loading priority:** `config:` field → `.shazam/agents/<name>.md` → hardcoded preset
 
 ### Subtask Delegation
 
