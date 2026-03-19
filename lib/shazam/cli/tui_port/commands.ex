@@ -794,54 +794,60 @@ defmodule Shazam.CLI.TuiPort.Commands do
     args = String.trim(rest)
     company_name = Helpers.deep_get(state, [:company, :name])
 
-    cond do
-      args == "--learn" ->
-        Helpers.send_event(state.port, "system", "info", "Learning from recent PR reviews...")
-        case Shazam.PRReviewer.learn() do
-          {:ok, count} ->
-            Helpers.send_event(state.port, "system", "info", "Learned #{count} patterns from merged PRs")
-          {:error, reason} ->
-            Helpers.send_event(state.port, "system", "error", "Failed to learn: #{inspect(reason)}")
-        end
+    try do
+      cond do
+        args == "--learn" ->
+          Helpers.send_event(state.port, "system", "info", "Learning from recent PR reviews...")
+          case Shazam.PRReviewer.learn() do
+            {:ok, count} ->
+              Helpers.send_event(state.port, "system", "info", "Learned #{count} patterns from merged PRs")
+            {:error, reason} ->
+              Helpers.send_event(state.port, "system", "error", "Failed to learn: #{inspect(reason)}")
+          end
 
-      args == "--patterns" ->
-        patterns = Shazam.PRReviewer.patterns()
-        if patterns == "" do
-          Helpers.send_event(state.port, "system", "info", "No review patterns learned yet. Run /review --learn")
-        else
-          lines = String.split(patterns, "\n") |> Enum.take(20)
-          Enum.each(lines, fn line ->
-            Helpers.send_event(state.port, "system", "info", line)
-          end)
-        end
+        args == "--patterns" ->
+          patterns = Shazam.PRReviewer.patterns()
+          if patterns == "" do
+            Helpers.send_event(state.port, "system", "info", "No review patterns learned yet. Run /review --learn")
+          else
+            lines = String.split(patterns, "\n") |> Enum.take(20)
+            Enum.each(lines, fn line ->
+              Helpers.send_event(state.port, "system", "info", line)
+            end)
+          end
 
-      true ->
-        # Review a specific PR
-        Helpers.send_event(state.port, "reviewer", "info", "Reviewing PR ##{args}...")
+        true ->
+          Helpers.send_event(state.port, "reviewer", "info", "Reviewing PR ##{args}...")
 
-        case Shazam.PRReviewer.review(args) do
-          {:ok, context} ->
-            prompt = Shazam.PRReviewer.build_review_prompt(context)
+          case Shazam.PRReviewer.review(args) do
+            {:ok, context} ->
+              prompt = Shazam.PRReviewer.build_review_prompt(context)
+              reviewer_profile = find_reviewer_agent(state)
+              reviewer_name = reviewer_profile[:name] || Helpers.find_pm_name(state)
 
-            # Find or create reviewer agent
-            reviewer_profile = find_reviewer_agent(state)
+              if Code.ensure_loaded?(Shazam.TaskBoard) do
+                Shazam.TaskBoard.create(%{
+                  title: "Review PR ##{args}",
+                  assigned_to: reviewer_name,
+                  created_by: "human",
+                  company: company_name,
+                  description: prompt
+                })
+                Helpers.send_event(state.port, reviewer_name, "task_created", "PR ##{args} review task created")
+              end
 
-            # Execute via TaskBoard
-            if Code.ensure_loaded?(Shazam.TaskBoard) do
-              Shazam.TaskBoard.create(%{
-                title: "Review PR ##{args}",
-                assigned_to: reviewer_profile.name,
-                created_by: "human",
-                company: company_name,
-                description: prompt
-              })
-              Helpers.send_event(state.port, "reviewer", "task_created", "PR ##{args} review task created for #{reviewer_profile.name}")
-            end
-
-          {:error, reason} ->
-            Helpers.send_event(state.port, "system", "error", "Failed: #{inspect(reason)}")
-        end
+            {:error, reason} ->
+              Helpers.send_event(state.port, "system", "error", "Review failed: #{inspect(reason)}")
+          end
+      end
+    rescue
+      e ->
+        Helpers.send_event(state.port, "system", "error", "Review error: #{inspect(e)}")
+    catch
+      kind, reason ->
+        Helpers.send_event(state.port, "system", "error", "Review error: #{inspect(kind)}: #{inspect(reason)}")
     end
+
     Status.send_status(state)
     state
   end
