@@ -70,7 +70,7 @@ defmodule Shazam.CLI do
       IO.puts("")
       IO.puts(["  Get started:"])
       IO.puts(["    1. ", IO.ANSI.cyan(), "shazam init", IO.ANSI.reset(), "   — Create a new project config"])
-      IO.puts(["    2. ", IO.ANSI.cyan(), "shazam start", IO.ANSI.reset(), "  — Boot agents and start working"])
+      IO.puts(["    2. ", IO.ANSI.cyan(), "shazam", IO.ANSI.reset(), "        — Open the interactive shell"])
       IO.puts(["    3. ", IO.ANSI.cyan(), "shazam help", IO.ANSI.reset(), "   — See all commands"])
       IO.puts("")
 

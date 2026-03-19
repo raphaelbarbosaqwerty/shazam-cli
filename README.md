@@ -221,10 +221,10 @@ Edit `shazam.yaml` (see [Configuration](#configuration) below).
 ### 3. Start the Interactive Shell
 
 ```bash
-shazam shell
+shazam
 ```
 
-This opens the Rust TUI with the full interactive shell. Inside:
+This automatically opens the interactive TUI (no need to type `shazam shell`). Inside:
 
 ```
 shazam❯ /start                    # Boot agents and RalphLoop
@@ -414,7 +414,7 @@ shazam apply -f shazam.yaml
 
 ### Interactive Shell Commands
 
-When running `shazam shell`, the following `/commands` are available:
+When running `shazam` (or `shazam shell`), the following `/commands` are available:
 
 | Command | Description |
 |---|---|
