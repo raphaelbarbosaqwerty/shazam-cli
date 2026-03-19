@@ -14,7 +14,13 @@ defmodule Shazam.TaskExecutor do
   @doc "Run an agent task with the given profile, task, and company name."
   def run_agent_task(agent_profile, task, company_name) do
     # Build session config
-    base_prompt = agent_profile.system_prompt || "You are #{agent_profile.role}. Be direct and objective."
+    # Load system prompt from .md file if it exists, otherwise use profile default
+    base_prompt = case Shazam.AgentConfig.read_agent(agent_profile.name) do
+      {:ok, %{system_prompt: prompt}} when prompt != nil and prompt != "" ->
+        prompt
+      _ ->
+        agent_profile.system_prompt || "You are #{agent_profile.role}. Be direct and objective."
+    end
     skills_prompt = PromptBuilder.build_skills_prompt(agent_profile.skills)
     modules_prompt = PromptBuilder.build_modules_prompt(agent_profile.modules)
     memory_prompt = SkillMemory.build_prompt(agent_profile)

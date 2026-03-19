@@ -356,6 +356,13 @@ defmodule Shazam.CLI.TuiPort.Commands do
         end
       end
 
+      # Create agent .md config file
+      if opts["preset"] do
+        Shazam.AgentConfig.write_preset(name, opts["preset"])
+      else
+        Shazam.AgentConfig.write_agent(name, new_agent)
+      end
+
       # Update state
       agents = (Helpers.deep_get(state, [:company, :agents]) || []) ++ [new_agent]
       state = put_in(state, [:company, :agents], agents)

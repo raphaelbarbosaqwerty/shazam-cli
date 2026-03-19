@@ -53,6 +53,10 @@ defmodule Shazam.CLI.Commands.Init do
     File.mkdir_p!(config_dir)
     File.write!(config_file, yaml)
 
+    # Create agent .md config files from presets
+    Shazam.AgentConfig.init_agents(agents)
+    IO.puts(["  ", IO.ANSI.faint(), "Agent configs created in .shazam/agents/", IO.ANSI.reset()])
+
     IO.puts("")
     Formatter.success("Created #{config_file}")
     Formatter.info("#{length(agents)} agent(s) configured")

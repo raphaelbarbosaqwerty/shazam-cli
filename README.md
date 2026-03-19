@@ -79,6 +79,7 @@ You (CEO) ──> describe task in natural language
 | **Markdown task files** | Tasks persist as .md files in .shazam/tasks/ — version-controlled, human-readable |
 | **PR Reviewer** | Review PRs with full codebase context, learn from team review patterns |
 | **Multi-repo workspaces** | Agents work across multiple repos simultaneously (backend + frontend + mobile) |
+| **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
 
 ---
 
@@ -559,6 +560,44 @@ Implement JWT-based authentication.
 
 Implemented in lib/auth/ — 3 files created.
 ```
+
+### Agent Config Files
+
+Agent system prompts and settings are stored as editable markdown files in `.shazam/agents/`:
+
+```
+.shazam/agents/
+├── pm.md
+├── senior_1.md
+├── senior_2.md
+└── reviewer.md
+```
+
+Each file has YAML frontmatter + a markdown body as the system prompt:
+
+```markdown
+---
+role: Senior Developer
+model: claude-opus-4-6
+budget: 150000
+tools: [Read, Edit, Write, Bash, Grep, Glob]
+---
+
+You are a Senior Developer. You write clean, production-ready code.
+
+## Responsibilities
+- Implement features and fix bugs
+- Follow existing project conventions
+
+## Restrictions
+- You do NOT write tests — QA handles testing
+- Stay within your domain paths
+```
+
+- `shazam init` creates `.md` files from presets automatically
+- Edit any `.md` to customize the agent's behavior, restrictions, or focus
+- Changes take effect on the next task (no restart needed)
+- If no `.md` exists, the hardcoded preset is used as fallback
 
 ### Subtask Delegation
 
