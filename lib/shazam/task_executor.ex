@@ -14,13 +14,8 @@ defmodule Shazam.TaskExecutor do
   @doc "Run an agent task with the given profile, task, and company name."
   def run_agent_task(agent_profile, task, company_name) do
     # Build session config
-    # Load system prompt from .md file if it exists, otherwise use profile default
-    base_prompt = case Shazam.AgentConfig.read_agent(agent_profile.name) do
-      {:ok, %{system_prompt: prompt}} when prompt != nil and prompt != "" ->
-        prompt
-      _ ->
-        agent_profile.system_prompt || "You are #{agent_profile.role}. Be direct and objective."
-    end
+    # Load system prompt: config_file > .shazam/agents/<name>.md > hardcoded preset
+    base_prompt = load_agent_prompt(agent_profile)
     skills_prompt = PromptBuilder.build_skills_prompt(agent_profile.skills)
     modules_prompt = PromptBuilder.build_modules_prompt(agent_profile.modules)
     memory_prompt = SkillMemory.build_prompt(agent_profile)
@@ -152,4 +147,28 @@ defmodule Shazam.TaskExecutor do
   @doc "Conditionally add an option to a keyword list."
   def maybe_add_opt(opts, _key, _value, false), do: opts
   def maybe_add_opt(opts, key, value, true), do: Keyword.put(opts, key, value)
+
+  # Load agent prompt with priority: config_file > .shazam/agents/<name>.md > hardcoded
+  defp load_agent_prompt(agent_profile) do
+    # 1. Check explicit config_file from YAML
+    config_file = Map.get(agent_profile, :config_file)
+    if config_file && config_file != "" do
+      workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+      path = if String.starts_with?(config_file, "/"), do: config_file, else: Path.join(workspace, config_file)
+      case Shazam.AgentConfig.read_agent_from_path(path) do
+        {:ok, %{system_prompt: prompt}} when prompt != nil and prompt != "" -> prompt
+        _ -> load_agent_prompt_by_name(agent_profile)
+      end
+    else
+      load_agent_prompt_by_name(agent_profile)
+    end
+  end
+
+  # 2. Check .shazam/agents/<name>.md
+  defp load_agent_prompt_by_name(agent_profile) do
+    case Shazam.AgentConfig.read_agent(agent_profile.name) do
+      {:ok, %{system_prompt: prompt}} when prompt != nil and prompt != "" -> prompt
+      _ -> agent_profile.system_prompt || "You are #{agent_profile.role}. Be direct and objective."
+    end
+  end
 end

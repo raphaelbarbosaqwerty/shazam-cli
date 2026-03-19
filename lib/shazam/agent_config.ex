@@ -50,6 +50,15 @@ defmodule Shazam.AgentConfig do
     end
   end
 
+  @doc "Read an agent config from an explicit file path."
+  def read_agent_from_path(path) do
+    case File.read(path) do
+      {:ok, content} -> parse_agent_md(content)
+      {:error, :enoent} -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Check if an agent .md file exists."
   def exists?(agent_name) do
     dir = agents_dir()

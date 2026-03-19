@@ -83,7 +83,8 @@ defmodule Shazam.CLI.YamlParser do
         tools: config["tools"] || default_tools(config["role"]),
         skills: config["skills"] || [],
         modules: build_modules(domain, domain_paths),
-        system_prompt: config["system_prompt"]
+        system_prompt: config["system_prompt"],
+        config_file: config["config"]
       }
     end)
   end
@@ -208,6 +209,7 @@ defmodule Shazam.CLI.YamlParser do
           lines = if a[:supervisor], do: lines ++ ["    supervisor: #{a.supervisor}"], else: lines
           lines = if a[:domain], do: lines ++ ["    domain: #{a.domain}"], else: lines
           lines = if a[:model], do: lines ++ ["    model: #{a.model}"], else: lines
+          lines = if a[:config_file], do: lines ++ ["    config: #{a.config_file}"], else: lines
           lines = lines ++ ["    budget: #{a[:budget] || 100_000}"]
           lines = if a[:tools] && a[:tools] != [] do
             tools = a.tools |> Enum.map(&"      - #{&1}") |> Enum.join("\n")
