@@ -5,9 +5,33 @@ defmodule Shazam.PRReviewer do
 
   @memories_dir ".shazam/memories/reviews"
 
+  @doc "Check if gh CLI is available and authenticated."
+  def check_gh do
+    case System.find_executable("gh") do
+      nil -> {:error, :not_installed}
+      _path ->
+        case System.cmd("gh", ["auth", "status"], stderr_to_stdout: true) do
+          {_, 0} -> :ok
+          _ -> {:error, :not_authenticated}
+        end
+    end
+  end
+
   @doc "Review a PR by number or URL."
   def review(pr_ref, opts \\ []) do
     _opts = opts
+
+    case check_gh() do
+      {:error, :not_installed} ->
+        {:error, "GitHub CLI (gh) not found. Install: brew install gh"}
+      {:error, :not_authenticated} ->
+        {:error, "GitHub CLI not authenticated. Run: gh auth login"}
+      :ok ->
+        do_review(pr_ref)
+    end
+  end
+
+  defp do_review(pr_ref) do
     pr_number = extract_pr_number(pr_ref)
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
 
@@ -33,6 +57,14 @@ defmodule Shazam.PRReviewer do
 
   @doc "Learn from merged PR reviews."
   def learn(opts \\ []) do
+    case check_gh() do
+      {:error, :not_installed} -> {:error, "GitHub CLI (gh) not found. Install: brew install gh"}
+      {:error, :not_authenticated} -> {:error, "GitHub CLI not authenticated. Run: gh auth login"}
+      :ok -> do_learn(opts)
+    end
+  end
+
+  defp do_learn(opts) do
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
     count = Keyword.get(opts, :count, 10)
 
