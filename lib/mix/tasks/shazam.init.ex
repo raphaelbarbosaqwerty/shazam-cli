@@ -66,6 +66,22 @@ defmodule Mix.Tasks.Shazam.Init do
     name = Helpers.prompt("Company name", Path.basename(File.cwd!()))
     mission = Helpers.prompt("Mission", "Build great software")
 
+    # Detect available CLI providers
+    IO.puts("")
+    Formatter.info("Choose your AI CLI provider:")
+    IO.puts("")
+    providers = detect_providers()
+    Enum.each(Enum.with_index(providers, 1), fn {{key, label, available}, i} ->
+      status = if available, do: "\e[32m(installed)\e[0m", else: "\e[31m(not found)\e[0m"
+      IO.puts("  #{i}) #{label} #{status}")
+      _ = key
+    end)
+    IO.puts("")
+
+    provider_choice = Helpers.prompt("Provider", "1")
+    provider_idx = String.to_integer(provider_choice) - 1
+    {provider_key, _, _} = Enum.at(providers, provider_idx, {"claude_code", "Claude Code", true})
+
     IO.puts("")
     Formatter.info("Choose a team template:")
     IO.puts("")
@@ -91,7 +107,8 @@ defmodule Mix.Tasks.Shazam.Init do
       name: name,
       mission: mission,
       agents: agents,
-      domains: domains
+      domains: domains,
+      provider: provider_key
     }
 
     yaml = YamlParser.to_yaml(config)
@@ -125,6 +142,15 @@ defmodule Mix.Tasks.Shazam.Init do
         tools: ["Read", "Edit", "Write", "Bash", "Grep", "Glob"]
       }
     end)
+  end
+
+  defp detect_providers do
+    [
+      {"claude_code", "Claude Code (claude)", System.find_executable("claude") != nil},
+      {"codex", "OpenAI Codex (codex)", System.find_executable("codex") != nil},
+      {"cursor", "Cursor (cursor)", System.find_executable("cursor") != nil},
+      {"gemini", "Google Gemini (gemini)", System.find_executable("gemini") != nil}
+    ]
   end
 
   defp detect_domains do

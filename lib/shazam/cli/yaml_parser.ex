@@ -210,6 +210,12 @@ defmodule Shazam.CLI.YamlParser do
 
   @doc "Generates a YAML string from a config map."
   def to_yaml(config) do
+    provider = if config[:provider] && config[:provider] != "claude_code" do
+      "provider: #{config.provider}  # claude_code | codex | cursor | gemini\n"
+    else
+      "provider: claude_code  # claude_code | codex | cursor | gemini\n"
+    end
+
     company = "company:\n  name: #{quote_str(config.name)}\n  mission: #{quote_str(config.mission)}\n"
 
     domains = if config[:domains] && map_size(config.domains) > 0 do
@@ -232,6 +238,7 @@ defmodule Shazam.CLI.YamlParser do
           lines = if a[:supervisor], do: lines ++ ["    supervisor: #{a.supervisor}"], else: lines
           lines = if a[:domain], do: lines ++ ["    domain: #{a.domain}"], else: lines
           lines = if a[:model], do: lines ++ ["    model: #{a.model}"], else: lines
+          lines = if a[:provider], do: lines ++ ["    provider: #{a.provider}"], else: lines
           lines = if a[:config_file], do: lines ++ ["    config: #{a.config_file}"], else: lines
           lines = if a[:budget], do: lines ++ ["    budget: #{a.budget}"], else: lines
           lines = if a[:tools] && a[:tools] != [] do
@@ -312,7 +319,7 @@ defmodule Shazam.CLI.YamlParser do
       ""
     end
 
-    company <> domains <> workspaces_section <> agents <> config_section <> tech_stack_section
+    provider <> "\n" <> company <> domains <> workspaces_section <> agents <> config_section <> tech_stack_section
   end
 
   defp quote_str(s) when is_binary(s) do
