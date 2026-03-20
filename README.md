@@ -79,6 +79,9 @@ You (CEO) ──> describe task in natural language
 | **Markdown task files** | Tasks persist as .md files in .shazam/tasks/ — version-controlled, human-readable |
 | **PR Reviewer** | Review PRs with full codebase context, learn from team review patterns |
 | **Multi-repo workspaces** | Agents work across multiple repos simultaneously (backend + frontend + mobile) |
+| **File mentions** | Type `@path/to/file` in tasks to include file contents as context |
+| **Image attachments** | Paste image paths into tasks — auto-saved to `.shazam/attachments/` |
+| **Token tracking** | Real-time token usage and cost ($) per agent, persisted across sessions |
 | **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
 
 ---

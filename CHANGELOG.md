@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.3.0 (2026-03-19)
+
+### Features
+- **File mentions** — type `@path/to/file` in tasks to auto-expand file contents inline
+- **Image paste** — paste image paths into tasks, auto-copied to `.shazam/attachments/`
+- **Token tracking** — real-time token usage and cost ($) per agent, persisted across sessions
+- **`/memory`** shows per-agent token breakdown and cumulative cost
+- **Auto-start** — agents boot automatically when opening shazam (no `/start` needed)
+- **Unlimited budget** — omit `budget:` from YAML for no token limit
+- **Task preservation** — tasks never deleted from disk, restored on session start
+- **Subtask persistence** — PM-created subtasks now saved as `.md` files
+- **Agent sync** — new agents synced to Company GenServer immediately
+- **Task skip feedback** — shows why tasks aren't picked up (agent not found, budget exceeded)
+
+### Bug Fixes
+- **Clean exit** — `/quit` exits with `System.halt(0)`, single message, no orphan processes
+- **Tasks stuck in pending** — fixed agent name matching (atom vs string), legacy tasks without company
+- **Session crash prevention** — bulletproof loop, safe RalphLoop calls, ignore normal EXIT signals
+- **Subtasks not saved** — `create_awaiting` now writes `.md` files
+
+### Test Suite
+- **322 tests, 0 failures**
+- New: agent_config_test (18), task_files_test (17), pr_reviewer_test (11)
+- Updated: metrics_test (+7), yaml_parser_test (+14)
+- CI: Elixir 1.18, random port for tests, no conflicts
+
 ## v0.2.0 (2026-03-19)
 
 ### Features

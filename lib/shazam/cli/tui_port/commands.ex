@@ -66,7 +66,11 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/review --learn     — Learn patterns from recent merged PR reviews",
       "/review --patterns  — Show learned review patterns",
       "",
-      "/exit               — Exit Shazam"
+      "/exit               — Exit Shazam",
+      "",
+      "Tips:",
+      "  @path/to/file       — Reference files in tasks (auto-expanded)",
+      "  Paste image path    — Attach images to tasks (.shazam/attachments/)"
     ]
     Enum.each(commands, fn cmd ->
       Helpers.send_event(state.port, "system", "help", cmd)

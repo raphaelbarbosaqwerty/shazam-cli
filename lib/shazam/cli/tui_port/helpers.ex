@@ -22,6 +22,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     text
     |> expand_paste_tokens(state.paste_store)
     |> expand_image_tokens(state.image_store)
+    |> expand_file_mentions()
   end
 
   def expand_paste_tokens(text, store) do
@@ -38,8 +39,40 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     Regex.replace(~r/\[Image #(\d+)\]/, text, fn _, id_str ->
       id = String.to_integer(id_str)
       case Map.get(store, id) do
-        path when is_binary(path) -> "[image:#{path}]"
+        path when is_binary(path) ->
+          # Copy to .shazam/attachments/ for persistence
+          workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+          attachments_dir = Path.join(workspace, ".shazam/attachments")
+          File.mkdir_p!(attachments_dir)
+
+          filename = "image_#{id}_#{Path.basename(path)}"
+          dest = Path.join(attachments_dir, filename)
+
+          case File.cp(path, dest) do
+            :ok -> "[image:#{dest}]"
+            _ -> "[image:#{path}]"
+          end
         _ -> "[image not found]"
+      end
+    end)
+  end
+
+  def expand_file_mentions(text) do
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+
+    Regex.replace(~r/@([\w\.\-\/]+)/, text, fn full_match, path ->
+      full_path = Path.join(workspace, path)
+      cond do
+        File.regular?(full_path) ->
+          content = File.read!(full_path)
+          # Truncate large files to 3000 chars
+          truncated = String.slice(content, 0..3000)
+          "\n\n**File: #{path}**\n```\n#{truncated}\n```\n"
+        File.dir?(full_path) ->
+          files = File.ls!(full_path) |> Enum.take(20) |> Enum.join(", ")
+          "\n\n**Directory: #{path}** — #{files}\n"
+        true ->
+          full_match  # Keep as-is if not found
       end
     end)
   end
