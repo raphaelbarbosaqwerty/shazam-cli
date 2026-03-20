@@ -176,6 +176,12 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
   def shutdown(state) do
     cleanup(state)
+    # Stop all OTP processes before exiting
+    try do
+      Application.stop(:shazam)
+    catch
+      _, _ -> :ok
+    end
     IO.puts("\nShazam session ended.")
     System.halt(0)
   end

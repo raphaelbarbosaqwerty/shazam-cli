@@ -106,54 +106,64 @@ defmodule Shazam.CLI.TuiPort.Commands do
       domain_config: config[:domain_config] || %{}
     }
 
-    if Shazam.RalphLoop.exists?(company_name) do
-      # Already running — sync agents
+    # Always try to start — handles all cases:
+    # 1. Fresh start (no Company, no RalphLoop)
+    # 2. Company exists but RalphLoop was killed (clear_previous_session)
+    # 3. Everything already running
+
+    # Step 1: Ensure Company exists
+    case Shazam.start_company(company_config) do
+      {:ok, _} ->
+        Helpers.send_event(state.port, "system", "company_started",
+          "Company '#{company_name}' started — #{length(company_config.agents)} agent(s)")
+      {:error, {:already_started, _}} ->
+        # Company exists — sync agents
+        try do
+          Shazam.Company.update_agents(company_name, company_config.agents)
+        catch
+          _, _ -> :ok
+        end
+        Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' ready (#{length(company_config.agents)} agents)")
+      {:error, reason} ->
+        Helpers.send_event(state.port, "system", "error", "Failed to start company: #{inspect(reason)}")
+    end
+
+    # Step 2: Ensure RalphLoop exists
+    unless Shazam.RalphLoop.exists?(company_name) do
+      # RalphLoop was killed or never started — create it
       try do
-        Shazam.Company.update_agents(company_name, company_config.agents)
+        Shazam.RalphLoop.start_link(company_name)
+        Process.sleep(300)
       catch
         _, _ -> :ok
       end
-      Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running (#{length(company_config.agents)} agents synced)")
-    else
-      case Shazam.start_company(company_config) do
-        {:ok, _} ->
-          Helpers.send_event(state.port, "system", "company_started",
-            "Company '#{company_name}' started — #{length(company_config.agents)} agent(s)")
-        {:error, {:already_started, _}} ->
-          try do
-            Shazam.Company.update_agents(company_name, company_config.agents)
-          catch
-            _, _ -> :ok
-          end
-          Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running (agents synced)")
-        {:error, reason} ->
-          Helpers.send_event(state.port, "system", "error", "Failed to start: #{inspect(reason)}")
+    end
+
+    # Step 3: Wait for RalphLoop
+    wait_for_ralph(company_name, 10)
+
+    # Step 4: Apply config
+    if config[:ralph_config] && Shazam.RalphLoop.exists?(company_name) do
+      rc = config[:ralph_config] || config.ralph_config
+      try do
+        if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
+        Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent] || 4)
+      catch
+        _, _ -> :ok
       end
     end
 
-    # Wait for RalphLoop to register
-    wait_for_ralph(company_name, 10)
-
-    # Apply ralph_config
-    if config[:ralph_config] && Shazam.RalphLoop.exists?(company_name) do
-      rc = config.ralph_config
-      safe_ralph_call(company_name, fn ->
-        if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
-        Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent] || 4)
-      end)
-    end
-
-    # Resume — always try, even if RalphLoop.exists? is false (might be registering)
+    # Step 5: Resume
     try do
       case Shazam.RalphLoop.resume(company_name) do
         {:ok, _} ->
           Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
         _ ->
-          Helpers.send_event(state.port, "system", "info", "RalphLoop not ready, agents may be paused. Try /start again.")
+          Helpers.send_event(state.port, "system", "info", "Could not resume. Try /start again.")
       end
     catch
       :exit, _ ->
-        Helpers.send_event(state.port, "system", "info", "RalphLoop not ready yet. Try /start again in a moment.")
+        Helpers.send_event(state.port, "system", "info", "RalphLoop not ready. Try /start again.")
       _, _ -> :ok
     end
 
