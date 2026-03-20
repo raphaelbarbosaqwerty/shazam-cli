@@ -85,6 +85,7 @@ You (CEO) ──> describe task in natural language
 | **QA checklists** | Auto-generated test cases for completed tasks, QA agent validates and marks checkboxes |
 | **Execution plans** | `/plan` creates phased plans with dependencies, approve to create all tasks at once |
 | **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
+| **Plugin system** | Extensible middleware — hook into task creation, completion, agent queries with `.shazam/plugins/*.ex` |
 
 ---
 
@@ -131,6 +132,7 @@ Shazam.Supervisor (one_for_one)
   |- Shazam.API.EventBus (GenServer)
   |- Shazam.Metrics (GenServer)
   |- Shazam.AgentInbox (GenServer)
+  |- Shazam.PluginManager (GenServer)
   +- Bandit HTTP Server (port 4040)
 ```
 
@@ -140,10 +142,12 @@ Shazam.Supervisor (one_for_one)
 RalphLoop polls TaskBoard every 5s
   -> TaskScheduler selects best pending task + agent
     -> TaskExecutor builds prompt (memory, skills, role rules)
-      -> SessionPool.checkout() gets reused Claude session
-        -> Orchestrator.execute_on_session() runs on Claude
+      -> PluginManager.before_query() — plugins can mutate prompt
+        -> SessionPool.checkout() gets reused Claude session
+          -> Orchestrator.execute_on_session() runs on Claude
+        -> PluginManager.after_query() — plugins can mutate result
           -> SubtaskParser extracts subtasks from output
-            -> New subtasks created (pending or awaiting_approval)
+            -> PluginManager.after_task_complete() — plugins notified
               -> TaskBoard.complete() marks original task done
 ```
 
@@ -354,6 +358,15 @@ config:
   poll_interval: 5000       # Task polling interval (ms)
   module_lock: true         # Prevent concurrent edits to same file
   peer_reassign: true       # Assign to idle peers if agent is busy
+
+# Plugins (optional) — middleware hooks for the agent lifecycle
+plugins:
+  - name: slack_notifier    # Matches module name (ShazamPlugin.SlackNotifier)
+    enabled: true
+    config:
+      webhook_url: "https://hooks.slack.com/services/..."
+  - name: auto_context
+    enabled: true
 ```
 
 ### Default Tool Sets by Role
@@ -460,6 +473,8 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/review --check <pr>` | Verify if previous review comments were addressed |
 | `/review --resolve <pr>` | Resolve all conversation threads on a PR |
 | `/workspaces` | List configured workspaces (multi-repo) |
+| `/plugins` | List loaded plugins |
+| `/plugins reload` | Hot-reload plugins from `.shazam/plugins/` |
 | `/review --learn` | Learn patterns from merged PR reviews |
 | `/review --patterns` | Show learned review patterns |
 | `/quit` | Exit Shazam |
@@ -621,6 +636,75 @@ agents:
 
 **Loading priority:** `config:` field → `.shazam/agents/<name>.md` → hardcoded preset
 
+### Plugins
+
+Shazam has an extensible plugin system that lets you hook into the agent lifecycle. Plugins are Elixir modules placed in `.shazam/plugins/*.ex`, compiled at runtime when you run `/start`.
+
+#### Lifecycle Events
+
+| Event | When | Can Mutate |
+|---|---|---|
+| `on_init` | `/start` boots agents | — |
+| `before_task_create` | Before task is created | Task attributes (or halt) |
+| `after_task_create` | After task is created | — (observe) |
+| `before_task_complete` | Before task is marked complete | Result output (or halt) |
+| `after_task_complete` | After task is marked complete | Result output |
+| `before_query` | Before prompt is sent to agent | Prompt text (or halt) |
+| `after_query` | After agent responds | Agent response |
+| `on_tool_use` | When agent uses a tool | — (observe only) |
+
+#### Writing a Plugin
+
+Create a file in `.shazam/plugins/` (alphabetical order = execution order):
+
+```elixir
+# .shazam/plugins/01_slack_notify.ex
+defmodule ShazamPlugin.SlackNotify do
+  use Shazam.Plugin
+
+  @impl true
+  def after_task_complete(task_id, result, ctx) do
+    url = ctx.plugin_config["webhook_url"]
+    if url do
+      payload = Jason.encode!(%{text: "Task #{task_id} done in #{ctx.company_name}"})
+      spawn(fn -> System.cmd("curl", ["-s", "-X", "POST", "-d", payload, url]) end)
+    end
+    {:ok, result}
+  end
+end
+```
+
+#### Plugin Context
+
+Every callback receives a context map with:
+
+```elixir
+%{
+  company_name: "MyProject",
+  agents: [%AgentWorker{name: "pm", role: "Project Manager", ...}, ...],
+  tasks: [%{id: "task_1", title: "...", status: :pending, ...}, ...],
+  plugin_config: %{"webhook_url" => "..."}  # from shazam.yaml
+}
+```
+
+#### Plugin Configuration
+
+```yaml
+# shazam.yaml
+plugins:
+  - name: slack_notify       # matches ShazamPlugin.SlackNotify (underscored)
+    enabled: true
+    config:
+      webhook_url: "https://hooks.slack.com/..."
+  - name: auto_context
+    enabled: false            # disabled without deleting the file
+```
+
+#### Commands
+
+- `/plugins` — list loaded plugins
+- `/plugins reload` — hot-reload plugins from disk (no restart needed)
+
 ### Subtask Delegation
 
 When a PM agent outputs a JSON block with subtasks, the SubtaskParser automatically creates child tasks:
@@ -710,6 +794,14 @@ export CODEX_CLI_BIN="codex"
 | `Shazam.CLI.REPL` | `cli/repl.ex` | Interactive shell with command history |
 | `Shazam.CLI.YamlParser` | `cli/yaml_parser.ex` | shazam.yaml parsing and validation |
 | `Shazam.CLI.Formatter` | `cli/formatter.ex` | Terminal output formatting (colors, tables) |
+
+### Plugin System
+
+| Module | File | Description |
+|---|---|---|
+| `Shazam.Plugin` | `plugin.ex` | Behaviour with 8 optional lifecycle callbacks |
+| `Shazam.PluginManager` | `plugin_manager.ex` | GenServer — loads plugins, runs event pipelines |
+| `Shazam.PluginLoader` | `plugin_loader.ex` | Runtime compilation of `.shazam/plugins/*.ex` |
 
 ### Infrastructure
 
@@ -822,12 +914,21 @@ lib/
   shazam/
     api/                 # HTTP API, WebSocket, EventBus
     cli/                 # CLI, REPL, YAML parser, formatter
+      tui_port/
+        commands/        # System, Tasks, Agents, Review, Tools
+    company/
+      builder.ex         # Agent config building & persistence
+    task_board/
+      persistence.ex     # ETS ↔ disk serialization
     application.ex       # OTP supervision tree
     company.ex           # Company GenServer
     orchestrator.ex      # Agent execution engine
     ralph_loop.ex        # Task execution loop
     task_board.ex        # Task management (ETS)
     task_executor.ex     # Prompt building & execution
+    plugin.ex            # Plugin behaviour (8 lifecycle hooks)
+    plugin_manager.ex    # Plugin loading & pipeline execution
+    plugin_loader.ex     # Runtime .ex compilation
     session_pool.ex      # Session reuse
     ...
 config/
