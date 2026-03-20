@@ -293,6 +293,7 @@ defmodule Shazam.RalphLoop do
             Logger.info("[RalphLoop:#{state.company_name}] Task #{task_id} completed by #{info.agent_name}")
             Shazam.FileLogger.info("Task #{task_id} completed by #{info.agent_name}")
             Shazam.Metrics.record_completion(info.agent_name, duration_ms)
+            Shazam.AgentPulse.clear(info.agent_name)
             ModuleManager.auto_claim_modules(state.company_name, info.agent_name, touched_files)
             SubtaskParser.maybe_create_subtasks(task_id, info.agent_name, output, state.company_name, state.auto_approve)
             unblock_dependents(task_id)

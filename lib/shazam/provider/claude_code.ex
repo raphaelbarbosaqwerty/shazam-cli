@@ -108,6 +108,9 @@ defmodule Shazam.Provider.ClaudeCode do
     alias ClaudeCode.Message.PartialAssistantMessage
     alias ClaudeCode.Content
 
+    # Tick pulse for sparkline tracking
+    Shazam.AgentPulse.tick(agent_name)
+
     cond do
       match?(%PartialAssistantMessage{}, message) and PartialAssistantMessage.text_delta?(message) ->
         text = PartialAssistantMessage.get_text(message)

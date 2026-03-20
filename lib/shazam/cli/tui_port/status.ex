@@ -14,6 +14,13 @@ defmodule Shazam.CLI.TuiPort.Status do
 
     memory_mb = div(:erlang.memory(:total), 1_048_576)
 
+    # Get sparklines for active agents
+    sparklines = try do
+      Shazam.AgentPulse.all_sparklines()
+    catch
+      _, _ -> %{}
+    end
+
     Helpers.send_json(state.port, %{
       type: "status",
       company: company_name,
@@ -26,7 +33,8 @@ defmodule Shazam.CLI.TuiPort.Status do
       tasks_awaiting: awaiting,
       budget_used: budget_used,
       budget_total: budget_total,
-      memory_mb: memory_mb
+      memory_mb: memory_mb,
+      sparklines: sparklines
     })
   end
 

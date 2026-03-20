@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.8.0 (2026-03-20)
+
+### Features
+- **Git-awareness** — agents see branch, status, recent commits, and modified files
+  - Auto-injected into prompts for new sessions and stateless providers
+  - Prevents duplicate work and merge conflicts between agents
+  - Pure `System.cmd("git", ...)` — zero dependencies
+
+- **Agent-to-agent communication** — agents can query each other's knowledge
+  - Output `AGENT_QUERY: senior_2 What is the users table schema?` in any task
+  - System reads target's learnings and topic files, injects response inline
+  - Max 2 queries per task (prevents loops)
+  - Passive — does NOT execute the other agent, only reads stored context
+  - Team Knowledge instruction auto-injected when other agents exist
+
+- **Agent Pulse (sparkline)** — real-time activity heartbeat per agent
+  - Sparkline characters (▁▂▃▄▅▆▇█) based on events/second
+  - Stall detection: ⚠ warning when no events for >30 seconds
+  - Sent to TUI via status JSON for status bar display
+  - Clears automatically when task completes
+
+- **Project auto-detection** (`shazam init`)
+  - Scans project files: package.json, mix.exs, Cargo.toml, go.mod, etc.
+  - Detects: framework, language, database, styling, testing, package manager, CI/CD
+  - Auto-suggests domains based on directory structure
+  - Auto-suggests agents based on detected stack
+  - New "Detected" template option (recommended) in the init wizard
+  - Pre-fills tech_stack in shazam.yaml
+
+### Bug Fixes
+- **`shazam update` crash** — `git fetch --tags` failed on force-pushed tags. Fixed with `--force` flag.
+
 ## v0.7.0 (2026-03-20)
 
 ### Features

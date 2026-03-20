@@ -32,6 +32,9 @@ defmodule Shazam.Application do
       # Agent Inbox — user message queue for terminal input
       Shazam.AgentInbox,
 
+      # Agent activity sparkline tracking
+      Shazam.AgentPulse,
+
       # Context persistence — cross-provider context continuity
       Shazam.ContextManager,
 

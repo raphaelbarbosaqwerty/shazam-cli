@@ -88,6 +88,10 @@ You (CEO) ──> describe task in natural language
 | **Plugin system** | Extensible middleware — hook into task creation, completion, agent queries with `.shazam/plugins/*.ex` |
 | **Multi-provider** | Use different AI CLIs per agent — Claude Code, Codex, Cursor, Gemini |
 | **Context persistence** | Agents learn across tasks — TF-IDF retrieval, auto-extracted learnings, atomized topic files |
+| **Git-awareness** | Agents see branch, status, recent commits, and modified files automatically |
+| **Agent queries** | Agents can query each other's knowledge without creating tasks |
+| **Project auto-detect** | `shazam init` scans your project and suggests agents, domains, and tech stack |
+| **Agent sparkline** | Real-time activity heartbeat (▁▂▃▄▅▆▇█) with stall detection |
 
 ---
 
@@ -885,12 +889,16 @@ export CODEX_CLI_BIN="codex"
 | `Shazam.CLI.YamlParser` | `cli/yaml_parser.ex` | shazam.yaml parsing and validation |
 | `Shazam.CLI.Formatter` | `cli/formatter.ex` | Terminal output formatting (colors, tables) |
 
-### Context & Retrieval
+### Context & Intelligence
 
 | Module | File | Description |
 |---|---|---|
 | `Shazam.ContextManager` | `context_manager.ex` | Cross-provider context persistence with atomized topic files |
 | `Shazam.ContextRAG` | `context_rag.ex` | TF-IDF retrieval engine — pure Elixir, zero dependencies |
+| `Shazam.GitContext` | `git_context.ex` | Git-awareness — branch, status, commits injected into prompts |
+| `Shazam.AgentQuery` | `agent_query.ex` | Agent-to-agent knowledge sharing (passive context lookup) |
+| `Shazam.AgentPulse` | `agent_pulse.ex` | Real-time activity sparkline with stall detection |
+| `Shazam.ProjectDetector` | `project_detector.ex` | Auto-detect tech stack, frameworks, domains from project files |
 
 ### Provider System
 

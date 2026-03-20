@@ -120,7 +120,7 @@ defmodule Shazam.CLI do
     if File.dir?(shazam_dir) do
       IO.puts("  Fetching latest version...")
 
-      {_, 0} = System.cmd("git", ["fetch", "origin", "--tags"], cd: shazam_dir, stderr_to_stdout: true)
+      {_, _} = System.cmd("git", ["fetch", "origin", "--tags", "--force"], cd: shazam_dir, stderr_to_stdout: true)
 
       # Get the latest tag (e.g., v0.6.0)
       {latest_tag, 0} = System.cmd("git", ["describe", "--tags", "--abbrev=0", "origin/main"], cd: shazam_dir)

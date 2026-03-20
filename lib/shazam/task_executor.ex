@@ -40,7 +40,15 @@ defmodule Shazam.TaskExecutor do
     # Non-PM agents get implementation instructions to avoid "plan only" outputs
     impl_prompt = if is_pm, do: "", else: PromptBuilder.implementation_instructions()
 
-    system_prompt = base_prompt <> impl_prompt <> role_rules_prompt <> tech_stack_prompt <> skills_prompt <> modules_prompt <> memory_prompt <> pm_prompt <> designer_prompt <> analyst_prompt <> domain_restriction_prompt
+    # Agent-to-agent query instruction (if other agents exist)
+    agent_query_prompt = try do
+      agents = Shazam.Company.get_agents(company_name)
+      Shazam.AgentQuery.build_instruction(agent_profile.name, agents)
+    catch
+      _, _ -> ""
+    end
+
+    system_prompt = base_prompt <> impl_prompt <> role_rules_prompt <> tech_stack_prompt <> skills_prompt <> modules_prompt <> memory_prompt <> pm_prompt <> designer_prompt <> analyst_prompt <> domain_restriction_prompt <> agent_query_prompt
 
     # Check if agent has a specific workspace
     agent_workspace = Map.get(agent_profile, :workspace, nil)
@@ -81,6 +89,9 @@ defmodule Shazam.TaskExecutor do
     # Resolve provider — default to ClaudeCode
     provider_mod = Resolver.resolve(agent_profile.provider || Application.get_env(:shazam, :default_provider))
 
+    # Build git context once per task execution
+    git_context = Shazam.GitContext.build_context(workspace)
+
     # Non-session providers (Codex, Cursor, Gemini) bypass SessionPool
     if not provider_mod.supports_sessions?() do
       prompt = PromptBuilder.build_task_prompt(agent_profile, task, :new)
@@ -88,6 +99,9 @@ defmodule Shazam.TaskExecutor do
       # Inject cross-provider context (task history, team activity, keyword matches)
       context = Shazam.ContextManager.build_context(agent_profile.name, task)
       prompt = if context != "", do: context <> "\n\n" <> prompt, else: prompt
+
+      # Inject git context before the task prompt
+      prompt = if git_context != "", do: git_context <> "\n\n" <> prompt, else: prompt
 
       prompt = case Shazam.PluginManager.run_pipeline(
         :before_query, {prompt, agent_profile.name}, company_name: company_name
@@ -109,6 +123,14 @@ defmodule Shazam.TaskExecutor do
         timeout: @task_timeout,
         cwd: workspace
       )
+
+      # Resolve agent-to-agent queries in output
+      result = case result do
+        {:ok, text, files} ->
+          {resolved, _count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
+          {:ok, resolved, files}
+        other -> other
+      end
 
       result = case Shazam.PluginManager.run_pipeline(
         :after_query, {result, agent_profile.name}, company_name: company_name
@@ -132,7 +154,9 @@ defmodule Shazam.TaskExecutor do
         # Inject context for new sessions (reused sessions already have history)
         prompt = if session_type == :new do
           context = Shazam.ContextManager.build_context(agent_profile.name, task)
-          if context != "", do: context <> "\n\n" <> prompt, else: prompt
+          prompt = if context != "", do: context <> "\n\n" <> prompt, else: prompt
+          # Inject git context before the task prompt
+          if git_context != "", do: git_context <> "\n\n" <> prompt, else: prompt
         else
           prompt
         end
@@ -158,6 +182,14 @@ defmodule Shazam.TaskExecutor do
         Shazam.Metrics.set_status(agent_profile.name, "working")
 
         result = Orchestrator.execute_on_session(session_pid, agent_profile.name, prompt)
+
+        # Resolve agent-to-agent queries in output
+        result = case result do
+          {:ok, text, files} ->
+            {resolved, _count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
+            {:ok, resolved, files}
+          other -> other
+        end
 
         # Plugin hook: after_query (can mutate result)
         result = case Shazam.PluginManager.run_pipeline(

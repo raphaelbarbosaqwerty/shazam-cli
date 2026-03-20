@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Shazam.Init do
   use Mix.Task
 
   alias Shazam.CLI.{Formatter, Helpers, YamlParser}
+  alias Shazam.ProjectDetector
 
   @presets %{
     "dev" => %{
@@ -66,8 +67,26 @@ defmodule Mix.Tasks.Shazam.Init do
     name = Helpers.prompt("Company name", Path.basename(File.cwd!()))
     mission = Helpers.prompt("Mission", "Build great software")
 
-    # Detect available CLI providers
+    # Auto-detect project tech stack
     IO.puts("")
+    Formatter.info("Scanning project directory...")
+    IO.puts("")
+    detected = ProjectDetector.detect(File.cwd!())
+    detection_summary = ProjectDetector.summary(detected)
+
+    has_detections = detection_summary != ""
+
+    if has_detections do
+      Formatter.success("Detected project stack:")
+      IO.puts("")
+      detection_summary |> String.split("\n") |> Enum.each(&IO.puts("  #{&1}"))
+      IO.puts("")
+    else
+      Formatter.dim("No specific tech stack detected.")
+      IO.puts("")
+    end
+
+    # Detect available CLI providers
     Formatter.info("Choose your AI CLI provider:")
     IO.puts("")
     providers = detect_providers()
@@ -85,6 +104,12 @@ defmodule Mix.Tasks.Shazam.Init do
     IO.puts("")
     Formatter.info("Choose a team template:")
     IO.puts("")
+
+    if has_detections do
+      agent_desc = detected.suggested_agents |> Enum.map(& &1.role) |> Enum.join(" + ")
+      IO.puts("  0) Detected       — #{agent_desc} \e[32m(recommended)\e[0m")
+    end
+
     IO.puts("  1) Developer Team  — PM + 2 senior devs")
     IO.puts("  2) Content Team    — PM + Senior Writer + Senior Researcher")
     IO.puts("  3) QA Team         — PM + 2 senior QAs")
@@ -92,15 +117,24 @@ defmodule Mix.Tasks.Shazam.Init do
     IO.puts("  5) Custom          — Build from scratch")
     IO.puts("")
 
-    choice = Helpers.prompt("Template", "1")
+    default_choice = if has_detections, do: "0", else: "1"
+    choice = Helpers.prompt("Template", default_choice)
 
     {agents, domains} = case choice do
+      "0" when has_detections -> {build_detected_agents(detected), build_detected_domains(detected)}
       "1" -> {@presets["dev"].agents, detect_domains()}
       "2" -> {@presets["content"].agents, %{}}
       "3" -> {@presets["qa"].agents, detect_domains()}
       "4" -> {@presets["solo"].agents, detect_domains()}
       "5" -> {build_custom_agents(), detect_domains()}
+      _ when has_detections -> {build_detected_agents(detected), build_detected_domains(detected)}
       _ -> {@presets["dev"].agents, detect_domains()}
+    end
+
+    tech_stack = if has_detections and map_size(detected.tech_stack) > 0 do
+      detected.tech_stack
+    else
+      %{}
     end
 
     config = %{
@@ -108,7 +142,8 @@ defmodule Mix.Tasks.Shazam.Init do
       mission: mission,
       agents: agents,
       domains: domains,
-      provider: provider_key
+      provider: provider_key,
+      tech_stack: tech_stack
     }
 
     yaml = YamlParser.to_yaml(config)
@@ -121,6 +156,53 @@ defmodule Mix.Tasks.Shazam.Init do
     IO.puts("")
     Formatter.dim("Next: mix shazam.start")
     IO.puts("")
+  end
+
+  defp build_detected_agents(detected) do
+    detected.suggested_agents
+    |> Enum.map(fn agent ->
+      role_lower = String.downcase(agent.role)
+
+      {supervisor, tools, budget, model} =
+        cond do
+          String.contains?(role_lower, "manager") ->
+            {nil, ["Read", "Grep", "Glob", "WebSearch"], 200_000, "claude-haiku-4-5-20251001"}
+
+          String.contains?(role_lower, "qa") ->
+            {if(has_pm?(detected), do: "pm", else: nil),
+             ["Read", "Bash", "Grep", "Glob", "Edit", "Write"], 150_000, nil}
+
+          true ->
+            {if(has_pm?(detected), do: "pm", else: nil),
+             ["Read", "Edit", "Write", "Bash", "Grep", "Glob"], 150_000, nil}
+        end
+
+      base = %{
+        name: agent.name,
+        role: agent.role,
+        supervisor: supervisor,
+        budget: budget,
+        tools: tools
+      }
+
+      base = if model, do: Map.put(base, :model, model), else: base
+      base = if agent[:domain], do: Map.put(base, :domain, agent.domain), else: base
+      base
+    end)
+  end
+
+  defp has_pm?(detected) do
+    Enum.any?(detected.suggested_agents, &(&1.name == "pm"))
+  end
+
+  defp build_detected_domains(detected) do
+    detected.domains
+    |> Enum.reduce(%{}, fn domain, acc ->
+      Map.put(acc, domain.name, %{
+        "description" => domain.description,
+        "paths" => domain.paths
+      })
+    end)
   end
 
   defp build_custom_agents do
