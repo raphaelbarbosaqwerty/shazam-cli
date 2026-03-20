@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.2 (2026-03-20)
+
+### Refactoring
+- **`cli/repl.ex`** — removed ~1400 lines of dead ANSI fallback code (1525 -> 99 lines)
+- **`cli/tui_port/commands.ex`** — split monolithic 1466-line file into 5 focused modules:
+  - `Commands.System` — /start, /stop, /resume, /help, /config, etc.
+  - `Commands.Tasks` — /task, /approve, /reject, /kill-task, etc.
+  - `Commands.Agents` — /agent add, /team create, /org, etc.
+  - `Commands.Review` — /review with all sub-flags
+  - `Commands.Tools` — /plan, /qa, /memory-bank
+- **`task_board.ex`** — extracted persistence logic into `TaskBoard.Persistence`
+- **`company.ex`** — extracted builder/config into `Company.Builder`
+- **`ralph_loop.ex`** — removed temporary debug logging, restored clean Logger calls
+- Zero compile warnings (was ~60)
+- Largest file reduced from 1525 to ~545 lines
+
 ## v0.4.1 (2026-03-19)
 
 ### Bug Fixes

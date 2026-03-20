@@ -204,13 +204,13 @@ defmodule Shazam.RalphLoop do
   end
 
   def handle_call(:pause, _from, state) do
-    log_ralph("PAUSE called (was paused: #{state.paused})", state)
+    Logger.info("[RalphLoop:#{state.company_name}] Paused")
     Shazam.API.EventBus.broadcast(%{event: "ralph_paused", company: state.company_name})
     {:reply, :ok, %{state | paused: true}}
   end
 
   def handle_call(:resume, _from, state) do
-    log_ralph("RESUME called (was paused: #{state.paused})", state)
+    Logger.info("[RalphLoop:#{state.company_name}] Resumed")
     Shazam.API.EventBus.broadcast(%{event: "ralph_resumed", company: state.company_name})
     {:reply, :ok, %{state | paused: false}}
   end
@@ -258,14 +258,12 @@ defmodule Shazam.RalphLoop do
 
   @impl true
   def handle_info(:poll, %{paused: true} = state) do
-    log_ralph("poll skipped — paused", state)
     schedule_poll(state.poll_interval)
     {:noreply, state}
   end
 
   def handle_info(:poll, state) do
     state = maybe_pick_tasks(state)
-    log_ralph("poll done (running: #{map_size(state.running)})", state)
     schedule_poll(state.poll_interval)
     {:noreply, state}
   end
@@ -372,23 +370,10 @@ defmodule Shazam.RalphLoop do
       all_pending = pending ++ pending_no_company
       all_pending = Enum.uniq_by(all_pending, & &1.id)
 
-      log_ralph("pending: #{length(all_pending)} (company=#{length(pending)}, no_company=#{length(pending_no_company)}), company_name=#{state.company_name}", state)
-
-      blocked = Enum.filter(all_pending, fn task -> TaskScheduler.task_blocked?(task) end)
-      already_running = Enum.filter(all_pending, fn task -> Map.has_key?(state.running, task.id) end)
-
       candidates =
         all_pending
         |> Enum.reject(fn task -> TaskScheduler.task_blocked?(task) end)
         |> Enum.reject(fn task -> Map.has_key?(state.running, task.id) end)
-
-      log_ralph("candidates: #{length(candidates)} (blocked=#{length(blocked)}, running=#{length(already_running)})", state)
-
-      if candidates != [] do
-        Enum.each(candidates, fn t ->
-          log_ralph("  candidate: #{t.id} '#{t.title}' assigned_to=#{t.assigned_to} company=#{t.company}", state)
-        end)
-      end
 
       locked = if state.module_lock, do: TaskScheduler.locked_module_paths(state.running, state.company_name), else: %{}
 
@@ -397,25 +382,16 @@ defmodule Shazam.RalphLoop do
   end
 
   defp execute_task(state, task) do
-    log_ralph("execute_task: #{task.id} '#{task.title}' assigned_to=#{task.assigned_to}", state)
-
     agent_profile = try do
       TaskScheduler.resolve_agent_profile(state.company_name, task.assigned_to)
     rescue
-      e ->
-        log_ralph("execute_task: resolve_agent_profile CRASHED: #{inspect(e)}", state)
-        nil
+      _ -> nil
     catch
-      kind, reason ->
-        log_ralph("execute_task: resolve_agent_profile #{kind}: #{inspect(reason)}", state)
-        nil
+      _, _ -> nil
     end
-
-    log_ralph("execute_task: agent_profile=#{if agent_profile, do: "found (#{agent_profile.name})", else: "nil"}", state)
 
     unless agent_profile do
       Logger.warning("[RalphLoop:#{state.company_name}] Agent '#{task.assigned_to}' not found, skipping task #{task.id}")
-      log_ralph("execute_task: SKIPPING — agent not found", state)
       Shazam.API.EventBus.broadcast(%{
         event: "task_skipped",
         task_id: task.id,
@@ -428,7 +404,7 @@ defmodule Shazam.RalphLoop do
       tokens_used = get_agent_tokens(agent_profile.name)
       budget = agent_profile.budget
       if budget && budget > 0 && tokens_used >= budget do
-        log_ralph("execute_task: SKIPPING — budget exceeded (#{tokens_used}/#{budget})", state)
+        Logger.warning("[RalphLoop:#{state.company_name}] Agent '#{agent_profile.name}' exceeded budget")
         TaskBoard.fail(task.id, "Agent budget exceeded (#{tokens_used}/#{budget} tokens)")
         Shazam.API.EventBus.broadcast(%{
           event: "task_failed",
@@ -438,10 +414,9 @@ defmodule Shazam.RalphLoop do
         })
         state
       else
-      log_ralph("execute_task: checking out task #{task.id}", state)
       case TaskBoard.checkout(task.id, task.assigned_to) do
         {:ok, checked_task} ->
-          log_ralph("execute_task: STARTING #{task.id} with #{task.assigned_to}", state)
+          Logger.info("[RalphLoop:#{state.company_name}] Executing task #{task.id} with #{task.assigned_to}")
 
           Shazam.API.EventBus.broadcast(%{
             event: "task_started",
@@ -467,7 +442,7 @@ defmodule Shazam.RalphLoop do
           %{state | running: Map.put(state.running, task.id, running_info)}
 
         {:error, reason} ->
-          log_ralph("execute_task: checkout FAILED for #{task.id}: #{inspect(reason)}", state)
+          Logger.debug("[RalphLoop:#{state.company_name}] Could not checkout #{task.id}: #{inspect(reason)}")
           state
       end
       end
@@ -541,9 +516,4 @@ defmodule Shazam.RalphLoop do
     _, _ -> 0
   end
 
-  defp log_ralph(msg, state) do
-    timestamp = Calendar.strftime(DateTime.utc_now(), "%H:%M:%S")
-    entry = "[#{timestamp}] [RalphLoop:#{state.company_name}] #{msg}\n"
-    File.write("/tmp/shazam-ralph.log", entry, [:append])
-  end
 end

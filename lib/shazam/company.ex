@@ -9,6 +9,7 @@ defmodule Shazam.Company do
 
   alias Shazam.Store
   alias Shazam.Hierarchy
+  alias Shazam.Company.Builder
 
   defstruct [
     :name,
@@ -107,7 +108,7 @@ defmodule Shazam.Company do
 
   @impl true
   def init(config) do
-    agents = build_agent_configs(config)
+    agents = Builder.build_agent_configs(config)
 
     case Hierarchy.validate_no_cycles(agents) do
       :ok ->
@@ -122,7 +123,7 @@ defmodule Shazam.Company do
         send(self(), :attach_ralph_loop)
 
         # Persist company config
-        save_company(config)
+        Builder.save_company(config)
 
         Logger.info("[Company:#{state.name}] Company started | Mission: #{state.mission}")
         Logger.info("[Company:#{state.name}] Registered agents: #{Enum.map_join(state.agents, ", ", & &1.name)}")
@@ -260,31 +261,14 @@ defmodule Shazam.Company do
   end
 
   def handle_call({:update_agents, agents_raw}, _from, state) do
-    new_agents =
-      Enum.map(agents_raw, fn a ->
-        %Shazam.AgentWorker{
-          name: a["name"],
-          role: a["role"],
-          supervisor: a["supervisor"],
-          domain: a["domain"],
-          budget: a["budget"] || 100_000,
-          heartbeat_interval: a["heartbeat_interval"] || 60_000,
-          tools: a["tools"] || [],
-          skills: a["skills"] || [],
-          modules: a["modules"] || [],
-          system_prompt: a["system_prompt"],
-          model: a["model"],
-          fallback_model: a["fallback_model"],
-          company_ref: state.name
-        }
-      end)
+    new_agents = Builder.build_agents_from_raw(agents_raw, state.name)
 
     case Hierarchy.validate_no_cycles(new_agents) do
       :ok ->
         new_state = %{state | agents: new_agents}
 
         # Re-persist
-        save_company_state(new_state)
+        Builder.save_company_state(new_state)
 
         Logger.info("[Company:#{state.name}] Agents updated: #{Enum.map_join(new_agents, ", ", & &1.name)}")
         {:reply, :ok, new_state}
@@ -385,7 +369,7 @@ defmodule Shazam.Company do
     end
 
     new_state = %{state | domain_config: new_config}
-    save_company_state(new_state)
+    Builder.save_company_state(new_state)
     Logger.info("[Company:#{state.name}] Domain '#{domain}' paths set to: #{inspect(paths)}")
     {:reply, :ok, new_state}
   end
@@ -400,77 +384,6 @@ defmodule Shazam.Company do
   end
 
   # --- Helpers ---
-
-  defp build_agent_configs(config) do
-    Enum.map(config.agents, fn agent ->
-      %Shazam.AgentWorker{
-        name: agent.name,
-        role: agent.role,
-        supervisor: agent[:supervisor],
-        domain: agent[:domain],
-        budget: agent[:budget] || 100_000,
-        heartbeat_interval: agent[:heartbeat_interval] || 60_000,
-        tools: agent[:tools] || [],
-        skills: agent[:skills] || [],
-        modules: agent[:modules] || [],
-        system_prompt: agent[:system_prompt],
-        model: agent[:model],
-        fallback_model: agent[:fallback_model],
-        company_ref: config.name
-      }
-    end)
-  end
-
-  defp save_company(config) do
-    data = %{
-      "name" => config.name,
-      "mission" => config.mission,
-      "agents" => Enum.map(config.agents, fn a ->
-        %{
-          "name" => a.name || a[:name],
-          "role" => a.role || a[:role],
-          "supervisor" => a[:supervisor],
-          "domain" => a[:domain],
-          "budget" => a[:budget] || 100_000,
-          "heartbeat_interval" => a[:heartbeat_interval] || 60_000,
-          "tools" => a[:tools] || [],
-          "skills" => a[:skills] || [],
-          "modules" => a[:modules] || [],
-          "system_prompt" => a[:system_prompt],
-          "model" => a[:model],
-          "fallback_model" => a[:fallback_model]
-        }
-      end)
-    }
-
-    Store.save("company:#{config.name}", data)
-  end
-
-  defp save_company_state(state) do
-    data = %{
-      "name" => state.name,
-      "mission" => state.mission,
-      "agents" => Enum.map(state.agents, fn a ->
-        %{
-          "name" => a.name,
-          "role" => a.role,
-          "supervisor" => a.supervisor,
-          "domain" => a.domain,
-          "budget" => a.budget,
-          "heartbeat_interval" => a.heartbeat_interval,
-          "tools" => a.tools,
-          "skills" => a.skills,
-          "modules" => a.modules,
-          "system_prompt" => a.system_prompt,
-          "model" => a.model,
-          "fallback_model" => a.fallback_model
-        }
-      end),
-      "domain_config" => state.domain_config
-    }
-
-    Store.save("company:#{state.name}", data)
-  end
 
   defp find_top_agent(agents) do
     case Enum.find(agents, &is_nil(&1.supervisor)) do
