@@ -130,9 +130,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
     # Step 2: Ensure RalphLoop exists
     unless Shazam.RalphLoop.exists?(company_name) do
-      # RalphLoop was killed or never started — create it
+      # RalphLoop was killed or never started — start under supervisor (not linked to TUI)
       try do
-        Shazam.RalphLoop.start_link(company_name)
+        DynamicSupervisor.start_child(
+          Shazam.RalphLoopSupervisor,
+          {Shazam.RalphLoop, company_name}
+        )
         Process.sleep(300)
       catch
         _, _ -> :ok
