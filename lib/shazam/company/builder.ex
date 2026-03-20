@@ -26,6 +26,7 @@ defmodule Shazam.Company.Builder do
         system_prompt: agent[:system_prompt],
         model: agent[:model],
         fallback_model: agent[:fallback_model],
+        provider: agent[:provider],
         company_ref: config.name
       }
     end)
@@ -51,7 +52,8 @@ defmodule Shazam.Company.Builder do
           "modules" => a[:modules] || [],
           "system_prompt" => a[:system_prompt],
           "model" => a[:model],
-          "fallback_model" => a[:fallback_model]
+          "fallback_model" => a[:fallback_model],
+          "provider" => a[:provider]
         }
       end)
     }
@@ -80,7 +82,8 @@ defmodule Shazam.Company.Builder do
           "modules" => a.modules,
           "system_prompt" => a.system_prompt,
           "model" => a.model,
-          "fallback_model" => a.fallback_model
+          "fallback_model" => a.fallback_model,
+          "provider" => a.provider
         }
       end),
       "domain_config" => state.domain_config
@@ -108,6 +111,7 @@ defmodule Shazam.Company.Builder do
         system_prompt: a["system_prompt"],
         model: a["model"],
         fallback_model: a["fallback_model"],
+        provider: a["provider"],
         company_ref: company_name
       }
     end)

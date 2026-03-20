@@ -48,7 +48,8 @@ defmodule Shazam.CLI.YamlParser do
         workspaces: workspaces,
         ralph_config: ralph_config,
         tech_stack: tech_stack,
-        plugins: plugins
+        plugins: plugins,
+        provider: data["provider"] || "claude_code"
       }}
     else
       {:error, _} = err -> err
@@ -86,7 +87,8 @@ defmodule Shazam.CLI.YamlParser do
         skills: config["skills"] || [],
         modules: build_modules(domain, domain_paths),
         system_prompt: config["system_prompt"],
-        config_file: config["config"]
+        config_file: config["config"],
+        provider: config["provider"]
       }
     end)
   end

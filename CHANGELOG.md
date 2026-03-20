@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.6.0 (2026-03-20)
+
+### Features
+- **Multi-provider support** — use different AI CLIs per agent
+  - `Shazam.Provider` behaviour with 6 callbacks: `start_session`, `stop_session`, `execute`, `supports_sessions?`, `name`, `available?`
+  - **4 providers built-in:** Claude Code, Codex, Cursor, Gemini
+  - `provider:` field in shazam.yaml — set globally or per-agent
+  - Session-based providers (Claude) use SessionPool; stateless providers (Codex, Cursor, Gemini) create ephemeral executions
+  - `Shazam.Provider.Resolver` maps names to modules
+  - Fully backward-compatible — Claude Code remains the default
+
+### Configuration Example
+```yaml
+provider: claude_code           # default for all agents
+
+agents:
+  pm:
+    role: Project Manager
+    provider: claude_code       # uses Claude (fast for PM)
+  senior_1:
+    role: Senior Developer
+    provider: codex             # uses Codex CLI
+  senior_2:
+    role: Senior Developer
+    provider: cursor            # uses Cursor CLI
+```
+
 ## v0.5.1 (2026-03-20)
 
 ### Features

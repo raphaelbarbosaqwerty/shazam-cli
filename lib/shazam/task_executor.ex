@@ -6,7 +6,7 @@ defmodule Shazam.TaskExecutor do
 
   require Logger
 
-  alias Shazam.{Orchestrator, SkillMemory}
+  alias Shazam.{Orchestrator, SkillMemory, Provider.Resolver}
   alias Shazam.TaskExecutor.PromptBuilder
 
   @task_timeout 1_800_000
@@ -78,7 +78,46 @@ defmodule Shazam.TaskExecutor do
       |> maybe_add_opt(:cwd, workspace, workspace != nil)
       |> maybe_add_opt(:add_dir, module_dirs, module_dirs != [])
 
-    # Use SessionPool — reuse existing session or create new one
+    # Resolve provider — default to ClaudeCode
+    provider_mod = Resolver.resolve(agent_profile.provider || Application.get_env(:shazam, :default_provider))
+
+    # Non-session providers (Codex, Cursor, Gemini) bypass SessionPool
+    if not provider_mod.supports_sessions?() do
+      prompt = PromptBuilder.build_task_prompt(agent_profile, task, :new)
+
+      prompt = case Shazam.PluginManager.run_pipeline(
+        :before_query, {prompt, agent_profile.name}, company_name: company_name
+      ) do
+        {:ok, {modified_prompt, _}} -> modified_prompt
+        _ -> prompt
+      end
+
+      Shazam.Metrics.set_status(agent_profile.name, "working")
+      Shazam.API.EventBus.broadcast(%{
+        event: "agent_output", agent: agent_profile.name,
+        text: "Working on: #{String.slice(task.title || "", 0..80)} (#{provider_mod.name()})"
+      })
+
+      result = provider_mod.execute(:stateless, prompt,
+        agent_name: agent_profile.name,
+        system_prompt: system_prompt,
+        model: model,
+        timeout: @task_timeout,
+        cwd: workspace
+      )
+
+      result = case Shazam.PluginManager.run_pipeline(
+        :after_query, {result, agent_profile.name}, company_name: company_name
+      ) do
+        {:ok, {modified, _}} -> modified
+        _ -> result
+      end
+
+      Shazam.Metrics.set_status(agent_profile.name, "idle")
+      result
+    else
+
+    # Session-based providers (ClaudeCode) use SessionPool
     case Shazam.SessionPool.checkout(agent_profile.name, session_opts) do
       {:ok, session_pid, session_type} ->
         # Build prompt based on session type:
@@ -150,6 +189,7 @@ defmodule Shazam.TaskExecutor do
           other -> {:error, {:unexpected, other}}
         end
     end
+    end # if not provider_mod.supports_sessions?
   end
 
   # Delegate prompt builders for backward compatibility

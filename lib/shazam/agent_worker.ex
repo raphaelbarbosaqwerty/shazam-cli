@@ -12,6 +12,7 @@ defmodule Shazam.AgentWorker do
     :system_prompt,
     :model,
     :fallback_model,
+    :provider,            # :claude_code | :codex | :cursor | :gemini | nil (uses default)
     tools: [],
     skills: [],
     modules: [],

@@ -104,6 +104,11 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     config = state.company[:config] || state.company.config
     company_name = state.company[:name] || state.company.name
 
+    # Set default provider
+    if config[:provider] do
+      Application.put_env(:shazam, :default_provider, config[:provider])
+    end
+
     company_config = %{
       name: company_name,
       mission: config[:mission] || config.mission,

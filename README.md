@@ -86,6 +86,7 @@ You (CEO) ──> describe task in natural language
 | **Execution plans** | `/plan` creates phased plans with dependencies, approve to create all tasks at once |
 | **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
 | **Plugin system** | Extensible middleware — hook into task creation, completion, agent queries with `.shazam/plugins/*.ex` |
+| **Multi-provider** | Use different AI CLIs per agent — Claude Code, Codex, Cursor, Gemini |
 
 ---
 
@@ -296,6 +297,9 @@ Shazam is configured via `shazam.yaml` (or `.shazam/shazam.yaml`).
 ### Full Configuration Reference
 
 ```yaml
+# Default AI CLI provider for all agents
+provider: claude_code  # claude_code | codex | cursor | gemini
+
 # Company definition
 company:
   name: "MyTeam"
@@ -328,6 +332,7 @@ agents:
       - "WebSearch"
     system_prompt: "You are a PM..."        # Custom prompt (optional)
     domain: "backend"                       # Restrict to domain paths
+    provider: "claude_code"                 # AI CLI provider (overrides global)
     heartbeat_interval: 60000               # Health check interval (ms)
 
   senior_dev:
@@ -824,6 +829,17 @@ export CODEX_CLI_BIN="codex"
 | `Shazam.CLI.REPL` | `cli/repl.ex` | Interactive shell with command history |
 | `Shazam.CLI.YamlParser` | `cli/yaml_parser.ex` | shazam.yaml parsing and validation |
 | `Shazam.CLI.Formatter` | `cli/formatter.ex` | Terminal output formatting (colors, tables) |
+
+### Provider System
+
+| Module | File | Description |
+|---|---|---|
+| `Shazam.Provider` | `provider.ex` | Behaviour for AI CLI providers (6 callbacks) |
+| `Shazam.Provider.ClaudeCode` | `provider/claude_code.ex` | Claude Code provider with session support |
+| `Shazam.Provider.Codex` | `provider/codex.ex` | OpenAI Codex CLI provider (stateless) |
+| `Shazam.Provider.Cursor` | `provider/cursor.ex` | Cursor CLI provider (stateless) |
+| `Shazam.Provider.Gemini` | `provider/gemini.ex` | Google Gemini CLI provider (stateless) |
+| `Shazam.Provider.Resolver` | `provider/resolver.ex` | Maps provider names to modules |
 
 ### Plugin System
 
