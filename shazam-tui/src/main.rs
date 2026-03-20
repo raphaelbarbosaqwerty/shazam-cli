@@ -796,7 +796,7 @@ fn play_lightning_animation(stdout: &mut io::Stdout) -> io::Result<()> {
     }
 
     // Subtitle
-    let subtitle = "       AI Agent Orchestrator v0.1.0  •  shazam.dev";
+    let subtitle = format!("       AI Agent Orchestrator v{}  •  shazam.dev", env!("CARGO_PKG_VERSION"));
     execute!(
         stdout,
         MoveTo(0, LOGO.len() as u16 + 2),

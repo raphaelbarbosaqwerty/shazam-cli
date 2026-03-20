@@ -1,5 +1,6 @@
 defmodule Shazam.CLI.Formatter do
   @moduledoc "Terminal output formatting for Shazam CLI."
+  @version Mix.Project.config()[:version] || "0.0.0"
 
   # --- Colors ---
 
@@ -101,7 +102,7 @@ defmodule Shazam.CLI.Formatter do
   # --- Event log line ---
 
   def log_event(event) do
-    ts = Calendar.strftime(DateTime.utc_now(), "%H:%M:%S")
+    ts = Calendar.strftime(NaiveDateTime.local_now(), "%H:%M:%S")
     type = event[:event] || event["event"] || "unknown"
     agent = event[:agent] || event["agent"] || event["assigned_to"] || ""
     title = event[:title] || event["title"] || event[:task_id] || event["task_id"] || ""
@@ -171,7 +172,7 @@ defmodule Shazam.CLI.Formatter do
     Enum.each(@logo_lines, fn line ->
       IO.puts([IO.ANSI.bright(), IO.ANSI.yellow(), line, IO.ANSI.reset()])
     end)
-    IO.puts([IO.ANSI.faint(), "       AI Agent Orchestrator v0.1.0  •  shazam.dev\n", IO.ANSI.reset()])
+    IO.puts([IO.ANSI.faint(), "       AI Agent Orchestrator v#{@version}  •  shazam.dev\n", IO.ANSI.reset()])
   end
 
   @bolt_full [
@@ -216,11 +217,17 @@ defmodule Shazam.CLI.Formatter do
     IO.write("\e[1;1H\n")
     Enum.each(@logo_lines, fn line ->
       IO.puts([IO.ANSI.bright(), IO.ANSI.yellow(), line, IO.ANSI.reset()])
-      Process.sleep(30)
     end)
-    IO.puts([IO.ANSI.faint(), "       AI Agent Orchestrator v0.1.0  •  shazam.dev\n", IO.ANSI.reset()])
+    IO.puts([IO.ANSI.faint(), "       AI Agent Orchestrator v#{@version}  •  shazam.dev\n", IO.ANSI.reset()])
 
     IO.write("\e[?25h")  # Show cursor
+  end
+
+  def print_welcome(:repl) do
+    IO.puts([IO.ANSI.faint(), "       AI Agent Orchestrator v#{@version}  •  shazam.dev\n", IO.ANSI.reset()])
+  end
+  def print_welcome(:server, port) do
+    IO.puts([IO.ANSI.faint(), "       Starting HTTP server on port #{port}...", IO.ANSI.reset()])
   end
 
   defp terminal_size do

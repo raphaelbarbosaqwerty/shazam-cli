@@ -278,20 +278,24 @@ defmodule Shazam.CLI.TuiPort.Commands do
   end
 
   defp format_task_time(task) do
+    dt = task[:created_at] || Map.get(task, :created_at)
+
     cond do
-      is_struct(task[:created_at], DateTime) ->
-        Calendar.strftime(task.created_at, "%H:%M:%S")
-      is_struct(task[:created_at], NaiveDateTime) ->
-        Calendar.strftime(task.created_at, "%H:%M:%S")
-      is_binary(task[:created_at]) ->
-        task.created_at
-      Map.has_key?(task, :created_at) and is_struct(task.created_at, DateTime) ->
-        Calendar.strftime(task.created_at, "%H:%M:%S")
-      Map.has_key?(task, :created_at) and is_struct(task.created_at, NaiveDateTime) ->
-        Calendar.strftime(task.created_at, "%H:%M:%S")
+      is_struct(dt, DateTime) ->
+        to_local_time_string(dt)
+      is_struct(dt, NaiveDateTime) ->
+        Calendar.strftime(dt, "%H:%M:%S")
+      is_binary(dt) ->
+        dt
       true ->
         ""
     end
+  end
+
+  defp to_local_time_string(dt) do
+    offset = NaiveDateTime.diff(NaiveDateTime.local_now(), NaiveDateTime.utc_now(), :second)
+    local_dt = DateTime.add(dt, offset, :second)
+    Calendar.strftime(local_dt, "%H:%M:%S")
   end
 
   def handle_command("/task " <> title, state) do
