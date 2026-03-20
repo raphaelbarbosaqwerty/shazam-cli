@@ -163,7 +163,8 @@ defmodule Shazam.CLI.YamlParser do
         %{
           name: p["name"],
           enabled: Map.get(p, "enabled", true),
-          config: p["config"] || %{}
+          config: p["config"] || %{},
+          events: p["events"]
         }
       name when is_binary(name) ->
         %{name: name, enabled: true, config: %{}}

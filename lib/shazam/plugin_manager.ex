@@ -50,8 +50,11 @@ defmodule Shazam.PluginManager do
       [] -> :ok
       plugins ->
         context = build_context(opts)
-        Enum.each(plugins, fn {plugin, _config} ->
-          safe_notify(plugin, event, data, context)
+        Enum.each(plugins, fn {plugin, plugin_config, allowed_events} ->
+          if event_allowed?(event, allowed_events) do
+            ctx = Map.put(context, :plugin_config, plugin_config)
+            safe_notify(plugin, event, data, ctx)
+          end
         end)
     end
   end
@@ -64,11 +67,13 @@ defmodule Shazam.PluginManager do
     {:ok, %{plugins: [], company_name: nil, workspace: nil, plugin_configs: []}}
   end
 
+  @all_events ~w(on_init before_task_create after_task_create before_task_complete after_task_complete before_query after_query on_tool_use)a
+
   @impl true
   def handle_call({:load, company_name, workspace, plugin_configs}, _from, _state) do
     modules = Shazam.PluginLoader.load_all(workspace)
 
-    # Pair each module with its config from YAML
+    # Pair each module with its config and event filter from YAML
     plugins =
       Enum.map(modules, fn mod ->
         mod_name = mod |> Module.split() |> List.last() |> Macro.underscore()
@@ -81,17 +86,18 @@ defmodule Shazam.PluginManager do
 
         plugin_config = config[:config] || config["config"] || %{}
         enabled = Map.get(config, :enabled, Map.get(config, "enabled", true))
+        events = parse_events(config[:events] || config["events"])
 
-        {mod, plugin_config, enabled}
+        {mod, plugin_config, enabled, events}
       end)
-      |> Enum.filter(fn {_mod, _config, enabled} -> enabled end)
-      |> Enum.map(fn {mod, config, _enabled} -> {mod, config} end)
+      |> Enum.filter(fn {_mod, _config, enabled, _events} -> enabled end)
+      |> Enum.map(fn {mod, config, _enabled, events} -> {mod, config, events} end)
 
     # Store in persistent_term for lock-free reads
     :persistent_term.put({__MODULE__, :plugins}, plugins)
 
     if plugins != [] do
-      names = Enum.map_join(plugins, ", ", fn {mod, _} -> inspect(mod) end)
+      names = Enum.map_join(plugins, ", ", fn {mod, _, _} -> inspect(mod) end)
       Logger.info("[PluginManager] Loaded #{length(plugins)} plugin(s): #{names}")
     end
 
@@ -120,7 +126,8 @@ defmodule Shazam.PluginManager do
             end)
 
           plugin_config = config[:config] || config["config"] || %{}
-          {mod, plugin_config}
+          events = parse_events(config[:events] || config["events"])
+          {mod, plugin_config, events}
         end)
 
       :persistent_term.put({__MODULE__, :plugins}, plugins)
@@ -139,10 +146,9 @@ defmodule Shazam.PluginManager do
   defp do_run_pipeline(plugins, event, data, opts) do
     context = build_context(opts)
 
-    Enum.reduce_while(plugins, {:ok, data}, fn {plugin, plugin_config}, {:ok, acc} ->
-      ctx = Map.put(context, :plugin_config, plugin_config)
-
-      if has_callback?(plugin, event) do
+    Enum.reduce_while(plugins, {:ok, data}, fn {plugin, plugin_config, allowed_events}, {:ok, acc} ->
+      if event_allowed?(event, allowed_events) and has_callback?(plugin, event) do
+        ctx = Map.put(context, :plugin_config, plugin_config)
         case safe_call(plugin, event, acc, ctx) do
           {:ok, new_data} -> {:cont, {:ok, new_data}}
           {:halt, reason} -> {:halt, {:halt, reason}}
@@ -177,6 +183,24 @@ defmodule Shazam.PluginManager do
   catch
     _, _ -> :ok
   end
+
+  defp event_allowed?(_event, nil), do: true
+  defp event_allowed?(_event, :all), do: true
+  defp event_allowed?(event, events) when is_list(events), do: event in events
+
+  defp parse_events(nil), do: :all
+  defp parse_events(events) when is_list(events) do
+    parsed = Enum.map(events, fn
+      e when is_atom(e) -> e
+      e when is_binary(e) -> String.to_atom(e)
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(&(&1 in @all_events))
+
+    if parsed == [], do: :all, else: parsed
+  end
+  defp parse_events(_), do: :all
 
   defp has_callback?(plugin, event) do
     arity = event_arity(event)

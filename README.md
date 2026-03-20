@@ -694,11 +694,41 @@ Every callback receives a context map with:
 plugins:
   - name: slack_notify       # matches ShazamPlugin.SlackNotify (underscored)
     enabled: true
+    events:                  # only trigger on these events (omit for all)
+      - after_task_complete
+      - after_task_create
     config:
       webhook_url: "https://hooks.slack.com/..."
   - name: auto_context
     enabled: false            # disabled without deleting the file
 ```
+
+#### Event Filtering
+
+By default, plugins run on all events they implement. Use the `events:` field to restrict when a plugin is called:
+
+```yaml
+plugins:
+  - name: logger
+    events: [after_task_create, after_task_complete]  # only these two
+  - name: auto_context
+    events: [before_query]                            # only prompt injection
+  - name: webhook
+    # no events: field = runs on all implemented callbacks
+```
+
+**Available events:**
+
+| Event | Phase | Can Mutate | Description |
+|---|---|---|---|
+| `on_init` | startup | — | Called when `/start` boots agents |
+| `before_task_create` | before | attrs or halt | Before a task is created |
+| `after_task_create` | after | task | After a task is created |
+| `before_task_complete` | before | result or halt | Before marking task complete |
+| `after_task_complete` | after | result | After task is marked complete |
+| `before_query` | before | prompt or halt | Before prompt is sent to agent |
+| `after_query` | after | response | After agent responds |
+| `on_tool_use` | notify | — (observe only) | When an agent uses a tool |
 
 #### Commands
 

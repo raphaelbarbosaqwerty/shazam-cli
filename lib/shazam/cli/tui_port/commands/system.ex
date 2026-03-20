@@ -334,10 +334,17 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     if plugins == [] do
       Helpers.send_event(state.port, "system", "info", "No plugins loaded. Place .ex files in .shazam/plugins/")
     else
-      Enum.each(plugins, fn {mod, config} ->
-        config_str = if config == %{}, do: "", else: " (config: #{inspect(config)})"
-        Helpers.send_event(state.port, "system", "info", "  #{inspect(mod)}#{config_str}")
+      Helpers.send_event(state.port, "system", "info", "#{length(plugins)} plugin(s) loaded:")
+      Enum.each(plugins, fn {mod, config, events} ->
+        events_str = case events do
+          :all -> "all events"
+          list when is_list(list) -> Enum.map_join(list, ", ", &to_string/1)
+        end
+        config_str = if config == %{}, do: "", else: " | config: #{inspect(config)}"
+        Helpers.send_event(state.port, "system", "info", "  #{inspect(mod)} [#{events_str}]#{config_str}")
       end)
+      Helpers.send_event(state.port, "system", "info", "")
+      Helpers.send_event(state.port, "system", "info", "Available events: on_init, before_task_create, after_task_create, before_task_complete, after_task_complete, before_query, after_query, on_tool_use")
     end
     state
   end
