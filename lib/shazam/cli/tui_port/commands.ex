@@ -143,15 +143,18 @@ defmodule Shazam.CLI.TuiPort.Commands do
       end)
     end
 
-    # Resume
-    if Shazam.RalphLoop.exists?(company_name) do
-      safe_ralph_call(company_name, fn ->
-        case Shazam.RalphLoop.resume(company_name) do
-          {:ok, _} ->
-            Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
-          _ -> :ok
-        end
-      end)
+    # Resume — always try, even if RalphLoop.exists? is false (might be registering)
+    try do
+      case Shazam.RalphLoop.resume(company_name) do
+        {:ok, _} ->
+          Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
+        _ ->
+          Helpers.send_event(state.port, "system", "info", "RalphLoop not ready, agents may be paused. Try /start again.")
+      end
+    catch
+      :exit, _ ->
+        Helpers.send_event(state.port, "system", "info", "RalphLoop not ready yet. Try /start again in a moment.")
+      _, _ -> :ok
     end
 
     # Subscribe to EventBus now that company is running

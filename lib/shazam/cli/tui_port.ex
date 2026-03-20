@@ -193,8 +193,16 @@ defmodule Shazam.CLI.TuiPort do
     unless event_type in @silent_events do
       task_id = event[:task_id] || event["task_id"]
 
+      cond do
+      # Show skip reason clearly
+      event_type == "task_skipped" ->
+        agent = event[:agent] || event["agent"] || ""
+        reason = event[:reason] || event["reason"] || "unknown reason"
+        task_id_val = event[:task_id] || event["task_id"] || ""
+        Helpers.send_event(state.port, agent, "task_skipped", "#{task_id_val}: #{reason}")
+
       # Handle agent_output specially — show tool_use and text, skip text_delta
-      if event_type == "agent_output" do
+      event_type == "agent_output" ->
         agent = event[:agent] || event["agent"] || ""
         output_type = event[:type] || event["type"] || ""
         content = event[:content] || event["content"] || ""
@@ -213,7 +221,9 @@ defmodule Shazam.CLI.TuiPort do
             # Skip text_delta and other noisy types
             :ok
         end
-      else
+
+      # All other events
+      true ->
         # Resolve agent and title from TaskBoard if not provided
         {agent, title} = resolve_event_details(event, task_id)
 
