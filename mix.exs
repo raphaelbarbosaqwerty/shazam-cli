@@ -7,7 +7,7 @@ defmodule Shazam.MixProject do
     [
       app: :shazam,
       version: @version,
-      elixir: "~> 1.16",
+      elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript()

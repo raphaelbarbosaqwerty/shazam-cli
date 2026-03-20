@@ -72,7 +72,15 @@ else
   }
 
   MISSING=0
-  check_cmd "elixir" "Install: https://elixir-lang.org/install.html" || MISSING=1
+  check_cmd "elixir" "Install: https://elixir-lang.org/install.html (>= 1.18 required)" || MISSING=1
+  # Check Elixir version >= 1.18
+  if command -v elixir &> /dev/null; then
+    ELIXIR_VER=$(elixir --version 2>/dev/null | grep "Elixir" | sed 's/.*Elixir //' | cut -d. -f1-2)
+    if [ "$(printf '%s\n' "1.18" "$ELIXIR_VER" | sort -V | head -1)" != "1.18" ]; then
+      echo -e "${RED}✗ Elixir $ELIXIR_VER is too old. Version >= 1.18 required.${NC}"
+      MISSING=1
+    fi
+  fi
   check_cmd "cargo" "Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" || MISSING=1
   check_cmd "claude" "Install: https://docs.anthropic.com/en/docs/claude-code" || MISSING=1
 
