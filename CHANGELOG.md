@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.0 (2026-03-20)
+
+### Features
+- **Plugin System** — extensible middleware architecture for the agent lifecycle
+  - Plugins are Elixir modules in `.shazam/plugins/*.ex`, compiled at runtime
+  - `use Shazam.Plugin` behaviour with optional callbacks
+  - **Events:** `on_init`, `before_task_create`, `after_task_create`, `before_task_complete`, `after_task_complete`, `before_query`, `after_query`, `on_tool_use`
+  - "before" hooks can mutate input or halt the pipeline; "after" hooks can mutate output
+  - Context: agents list, tasks list, company name, per-plugin config
+  - Zero-cost when no plugins loaded (persistent_term fast path, no GenServer call)
+  - Pipeline execution: data flows through plugins in alphabetical filename order
+  - `/plugins` — list loaded plugins
+  - `/plugins reload` — hot-reload plugins from disk
+  - `plugins:` section in shazam.yaml for per-plugin configuration
+  - Example plugins: logger, webhook, auto-context injection
+
 ## v0.4.2 (2026-03-20)
 
 ### Refactoring

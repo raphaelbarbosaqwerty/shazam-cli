@@ -37,6 +37,7 @@ defmodule Shazam.CLI.YamlParser do
       ralph_config = build_ralph_config(data["config"] || %{})
 
       tech_stack = build_tech_stack(data["tech_stack"])
+      plugins = build_plugins_config(data["plugins"])
 
       {:ok, %{
         name: name,
@@ -46,7 +47,8 @@ defmodule Shazam.CLI.YamlParser do
         workspace: company["workspace"],
         workspaces: workspaces,
         ralph_config: ralph_config,
-        tech_stack: tech_stack
+        tech_stack: tech_stack,
+        plugins: plugins
       }}
     else
       {:error, _} = err -> err
@@ -153,6 +155,23 @@ defmodule Shazam.CLI.YamlParser do
   defp build_tech_stack(nil), do: nil
   defp build_tech_stack(stack) when is_map(stack), do: stack
   defp build_tech_stack(_), do: nil
+
+  defp build_plugins_config(nil), do: []
+  defp build_plugins_config(plugins) when is_list(plugins) do
+    Enum.map(plugins, fn
+      p when is_map(p) ->
+        %{
+          name: p["name"],
+          enabled: Map.get(p, "enabled", true),
+          config: p["config"] || %{}
+        }
+      name when is_binary(name) ->
+        %{name: name, enabled: true, config: %{}}
+      _ -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+  defp build_plugins_config(_), do: []
 
   defp build_ralph_config(config) when is_map(config) do
     %{

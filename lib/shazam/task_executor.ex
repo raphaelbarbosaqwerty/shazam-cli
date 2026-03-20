@@ -86,6 +86,16 @@ defmodule Shazam.TaskExecutor do
         # :reused → lean prompt (just the task — agent already has context)
         prompt = PromptBuilder.build_task_prompt(agent_profile, task, session_type)
 
+        # Plugin hook: before_query (can mutate prompt or halt)
+        prompt = case Shazam.PluginManager.run_pipeline(
+          :before_query, {prompt, agent_profile.name},
+          company_name: company_name
+        ) do
+          {:ok, {modified_prompt, _agent}} -> modified_prompt
+          {:halt, _reason} -> prompt
+          _ -> prompt
+        end
+
         Logger.info("[RalphLoop] #{if session_type == :reused, do: "Reusing", else: "New"} session for '#{agent_profile.name}' | prompt ~#{String.length(prompt)} chars")
 
         Shazam.API.EventBus.broadcast(%{
@@ -97,6 +107,15 @@ defmodule Shazam.TaskExecutor do
         Shazam.Metrics.set_status(agent_profile.name, "working")
 
         result = Orchestrator.execute_on_session(session_pid, agent_profile.name, prompt)
+
+        # Plugin hook: after_query (can mutate result)
+        result = case Shazam.PluginManager.run_pipeline(
+          :after_query, {result, agent_profile.name},
+          company_name: company_name
+        ) do
+          {:ok, {modified_result, _agent}} -> modified_result
+          _ -> result
+        end
 
         Shazam.Metrics.set_status(agent_profile.name, "idle")
 

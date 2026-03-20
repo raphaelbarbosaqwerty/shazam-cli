@@ -21,6 +21,8 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/clear" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/memory" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/workspaces" = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugins reload" = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugins" = cmd, state), do: System.handle_command(cmd, state)
 
   # ── Agent management commands ────────────────────────────
 

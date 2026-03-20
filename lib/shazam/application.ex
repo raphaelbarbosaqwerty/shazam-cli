@@ -32,6 +32,9 @@ defmodule Shazam.Application do
       # Agent Inbox — user message queue for terminal input
       Shazam.AgentInbox,
 
+      # Plugin Manager — loads .shazam/plugins/*.ex at runtime
+      Shazam.PluginManager,
+
       # HTTP API on port 4040
       {Bandit, plug: Shazam.API.Router, port: Application.get_env(:shazam, :port, 4040), thousand_island_options: [num_acceptors: 10]}
     ]

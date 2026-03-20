@@ -154,34 +154,46 @@ defmodule Shazam.TaskBoard do
 
   @impl true
   def handle_call({:create, attrs}, _from, state) do
-    id = "task_#{state.counter + 1}"
-    now = DateTime.utc_now()
+    # Plugin hook: before_task_create (can mutate attrs or halt)
+    case Shazam.PluginManager.run_pipeline(:before_task_create, attrs, company_name: attrs[:company]) do
+      {:halt, reason} ->
+        {:reply, {:error, {:plugin_halted, reason}}, state}
 
-    task = %{
-      id: id,
-      title: attrs[:title] || "Untitled",
-      description: attrs[:description],
-      status: :pending,
-      assigned_to: attrs[:assigned_to],
-      created_by: attrs[:created_by],
-      parent_task_id: attrs[:parent_task_id],
-      depends_on: attrs[:depends_on],
-      company: attrs[:company],
-      result: nil,
-      attachments: attrs[:attachments] || [],
-      retry_count: attrs[:retry_count] || 0,
-      max_retries: attrs[:max_retries] || 2,
-      last_error: nil,
-      created_at: now,
-      updated_at: now
-    }
+      {:ok, attrs} ->
+        id = "task_#{state.counter + 1}"
+        now = DateTime.utc_now()
 
-    :ets.insert(state.table, {id, task})
-    Logger.info("[TaskBoard] Task created: #{id} - #{task.title}")
-    broadcast(:task_created, task)
-    spawn(fn -> Shazam.TaskFiles.write_task(task) end)
+        task = %{
+          id: id,
+          title: attrs[:title] || "Untitled",
+          description: attrs[:description],
+          status: :pending,
+          assigned_to: attrs[:assigned_to],
+          created_by: attrs[:created_by],
+          parent_task_id: attrs[:parent_task_id],
+          depends_on: attrs[:depends_on],
+          company: attrs[:company],
+          result: nil,
+          attachments: attrs[:attachments] || [],
+          retry_count: attrs[:retry_count] || 0,
+          max_retries: attrs[:max_retries] || 2,
+          last_error: nil,
+          created_at: now,
+          updated_at: now
+        }
 
-    {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
+        :ets.insert(state.table, {id, task})
+        Logger.info("[TaskBoard] Task created: #{id} - #{task.title}")
+        broadcast(:task_created, task)
+        spawn(fn -> Shazam.TaskFiles.write_task(task) end)
+
+        # Plugin hook: after_task_create (can observe/mutate)
+        spawn(fn ->
+          Shazam.PluginManager.run_pipeline(:after_task_create, task, company_name: task.company)
+        end)
+
+        {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
+    end
   end
 
   def handle_call({:create_awaiting, attrs}, _from, state) do

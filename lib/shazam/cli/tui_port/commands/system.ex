@@ -84,6 +84,10 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       "/qa --report         — Generate daily QA report",
       "/qa --auto on|off    — Toggle auto-generation on task completion",
       "",
+      "Plugins:",
+      "/plugins             — List loaded plugins",
+      "/plugins reload      — Reload plugins from .shazam/plugins/",
+      "",
       "/exit               — Exit Shazam",
       "",
       "Tips:",
@@ -156,6 +160,21 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     # Subscribe to EventBus now that company is running
     if Code.ensure_loaded?(Shazam.API.EventBus) do
       Shazam.API.EventBus.subscribe()
+    end
+
+    # Step 5: Load plugins from .shazam/plugins/
+    try do
+      workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+      plugin_configs = config[:plugins] || []
+      case Shazam.PluginManager.load_plugins(company_name, workspace, plugin_configs) do
+        {:ok, 0} -> :ok
+        {:ok, n} ->
+          Helpers.send_event(state.port, "system", "info", "#{n} plugin(s) loaded")
+          Shazam.PluginManager.run_pipeline(:on_init, nil, company_name: company_name)
+        _ -> :ok
+      end
+    catch
+      _, _ -> :ok
     end
 
     Status.send_status(state)
@@ -297,6 +316,29 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     Enum.each(lines, fn line ->
       Helpers.send_event(state.port, "system", "info", line)
     end)
+    state
+  end
+
+  def handle_command("/plugins reload", state) do
+    case Shazam.PluginManager.reload() do
+      {:ok, n} ->
+        Helpers.send_event(state.port, "system", "info", "Reloaded #{n} plugin(s)")
+      _ ->
+        Helpers.send_event(state.port, "system", "info", "No plugins to reload")
+    end
+    state
+  end
+
+  def handle_command("/plugins", state) do
+    plugins = Shazam.PluginManager.list_plugins()
+    if plugins == [] do
+      Helpers.send_event(state.port, "system", "info", "No plugins loaded. Place .ex files in .shazam/plugins/")
+    else
+      Enum.each(plugins, fn {mod, config} ->
+        config_str = if config == %{}, do: "", else: " (config: #{inspect(config)})"
+        Helpers.send_event(state.port, "system", "info", "  #{inspect(mod)}#{config_str}")
+      end)
+    end
     state
   end
 

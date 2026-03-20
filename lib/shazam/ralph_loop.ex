@@ -280,6 +280,15 @@ defmodule Shazam.RalphLoop do
 
         case result do
           {:ok, output, touched_files} ->
+            # Plugin hook: after_task_complete
+            output = case Shazam.PluginManager.run_pipeline(
+              :after_task_complete, {task_id, output},
+              company_name: state.company_name, agent_name: info.agent_name
+            ) do
+              {:ok, {_id, modified}} -> modified
+              _ -> output
+            end
+
             TaskBoard.complete(task_id, output)
             Logger.info("[RalphLoop:#{state.company_name}] Task #{task_id} completed by #{info.agent_name}")
             Shazam.FileLogger.info("Task #{task_id} completed by #{info.agent_name}")
@@ -294,12 +303,19 @@ defmodule Shazam.RalphLoop do
               company: state.company_name
             })
 
-            # Process queued user messages
             if Shazam.AgentInbox.has_pending?(info.agent_name) do
               spawn(fn -> Shazam.AgentInbox.execute_pending(info.agent_name) end)
             end
 
           {:ok, output} ->
+            output = case Shazam.PluginManager.run_pipeline(
+              :after_task_complete, {task_id, output},
+              company_name: state.company_name, agent_name: info.agent_name
+            ) do
+              {:ok, {_id, modified}} -> modified
+              _ -> output
+            end
+
             TaskBoard.complete(task_id, output)
             Logger.info("[RalphLoop:#{state.company_name}] Task #{task_id} completed by #{info.agent_name}")
             Shazam.FileLogger.info("Task #{task_id} completed by #{info.agent_name}")
