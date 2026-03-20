@@ -5,8 +5,10 @@ defmodule Shazam.TaskBoardFullTest do
   import Shazam.Test.Factory
 
   setup do
-    # Ensure EventBus is running (TaskBoard broadcasts to it)
+    # Ensure Store is initialized (TaskBoard depends on it)
+    Shazam.Store.init()
     ensure_started(Shazam.API.EventBus)
+    ensure_started(Shazam.PluginManager)
     ensure_started(Shazam.TaskBoard)
     # Clear all tasks before each test
     TaskBoard.clear_all()

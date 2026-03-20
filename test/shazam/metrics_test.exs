@@ -5,21 +5,10 @@ defmodule Shazam.MetricsTest do
 
   setup do
     ensure_started(Shazam.API.EventBus)
+    ensure_started(Shazam.Metrics)
 
-    # Remove persisted metrics file so load_metrics starts clean
-    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
-    metrics_path = Path.join([workspace, ".shazam", "metrics.json"])
-    File.rm(metrics_path)
-
-    # Stop and restart Metrics to get a clean ETS table each test
-    case GenServer.whereis(Metrics) do
-      nil -> :ok
-      pid ->
-        GenServer.stop(pid, :normal)
-        Process.sleep(10)
-    end
-
-    {:ok, _} = Metrics.start_link([])
+    # Fully clear metrics for test isolation
+    Metrics.reset_all()
     :ok
   end
 

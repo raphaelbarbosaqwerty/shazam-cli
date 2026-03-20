@@ -50,6 +50,11 @@ defmodule Shazam.Metrics do
     GenServer.call(__MODULE__, :reset)
   end
 
+  @doc "Fully clears all metrics (for tests)."
+  def reset_all do
+    GenServer.call(__MODULE__, :reset_all)
+  end
+
   @doc "Returns metrics for all agents as a map."
   def get_all do
     GenServer.call(__MODULE__, :get_all)
@@ -151,6 +156,13 @@ defmodule Shazam.Metrics do
           failures: metrics.failures || 0
         }})
     end)
+    :ets.insert(@table, {:__started_at, now})
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:reset_all, _from, state) do
+    :ets.delete_all_objects(@table)
+    now = System.monotonic_time(:millisecond)
     :ets.insert(@table, {:__started_at, now})
     {:reply, :ok, state}
   end

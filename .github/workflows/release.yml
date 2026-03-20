@@ -10,8 +10,8 @@ permissions:
 
 env:
   MIX_ENV: prod
-  ELIXIR_VERSION: "1.16.3"
-  OTP_VERSION: "26.2.5"
+  ELIXIR_VERSION: "1.18"
+  OTP_VERSION: "27"
   RUST_TOOLCHAIN: "stable"
 
 jobs:
