@@ -37,6 +37,11 @@ defmodule Shazam.Metrics do
   end
 
   @doc "Sets the current status for an agent (e.g., 'working', 'idle', 'thinking')."
+  @doc "Records token usage and cost for an agent."
+  def record_tokens(agent, tokens, cost_usd \\ 0.0) do
+    GenServer.cast(__MODULE__, {:record_tokens, agent, tokens, cost_usd})
+  end
+
   def set_status(agent, status) do
     GenServer.cast(__MODULE__, {:set_status, agent, status})
   end
@@ -61,8 +66,11 @@ defmodule Shazam.Metrics do
   @impl true
   def init(_opts) do
     table = :ets.new(@table, [:set, :named_table, :public, read_concurrency: true])
-    # Store global start time for tasks-per-hour calculation
     :ets.insert(table, {:__started_at, System.monotonic_time(:millisecond)})
+
+    # Restore saved metrics from disk
+    load_metrics(table)
+
     Logger.info("[Metrics] Started")
     {:ok, %{table: table}}
   end
@@ -107,6 +115,18 @@ defmodule Shazam.Metrics do
     {:noreply, state}
   end
 
+  def handle_cast({:record_tokens, agent, tokens, cost_usd}, state) do
+    update_agent(agent, fn metrics ->
+      %{metrics |
+        total_tokens: metrics.total_tokens + tokens,
+        cost_usd: Float.round((metrics.cost_usd || 0.0) + cost_usd, 6)
+      }
+    end)
+    # Save metrics to disk
+    save_metrics()
+    {:noreply, state}
+  end
+
   def handle_cast({:set_status, agent, status}, state) do
     update_agent(agent, fn metrics ->
       %{metrics | status: status}
@@ -116,8 +136,23 @@ defmodule Shazam.Metrics do
 
   @impl true
   def handle_call(:reset, _from, state) do
-    :ets.delete_all_objects(@table)
-    :ets.insert(@table, {:__started_at, System.monotonic_time(:millisecond)})
+    # Reset session metrics but preserve cumulative token/cost data
+    now = System.monotonic_time(:millisecond)
+    :ets.tab2list(@table)
+    |> Enum.each(fn
+      {:__started_at, _} -> :ok
+      {agent, metrics} ->
+        # Keep tokens and cost, reset session counters
+        :ets.insert(@table, {agent, %{default_metrics(now) |
+          total_tokens: metrics.total_tokens || 0,
+          input_tokens: metrics[:input_tokens] || 0,
+          output_tokens: metrics[:output_tokens] || 0,
+          cost_usd: metrics[:cost_usd] || 0.0,
+          successes: metrics.successes || 0,
+          failures: metrics.failures || 0
+        }})
+    end)
+    :ets.insert(@table, {:__started_at, now})
     {:reply, :ok, state}
   end
 
@@ -153,6 +188,9 @@ defmodule Shazam.Metrics do
       total_duration_ms: 0,
       avg_duration_ms: 0,
       total_tokens: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cost_usd: 0.0,
       estimated_cost: 0.0,
       tasks_per_hour: 0.0,
       first_task_at: now,
@@ -213,5 +251,63 @@ defmodule Shazam.Metrics do
 
   defp broadcast_metrics_update do
     Shazam.API.EventBus.broadcast(%{event: "metrics_updated"})
+  end
+
+  defp metrics_file do
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    Path.join([workspace, ".shazam", "metrics.json"])
+  end
+
+  defp save_metrics do
+    spawn(fn ->
+      try do
+        data = :ets.tab2list(@table)
+          |> Enum.reject(fn {key, _} -> key == :__started_at end)
+          |> Enum.map(fn {agent, metrics} ->
+            {to_string(agent), %{
+              total_tokens: metrics.total_tokens || 0,
+              input_tokens: metrics[:input_tokens] || 0,
+              output_tokens: metrics[:output_tokens] || 0,
+              cost_usd: metrics[:cost_usd] || 0.0,
+              successes: metrics.successes || 0,
+              failures: metrics.failures || 0
+            }}
+          end)
+          |> Map.new()
+
+        path = metrics_file()
+        File.mkdir_p!(Path.dirname(path))
+        File.write!(path, Jason.encode!(data, pretty: true))
+      catch
+        _, _ -> :ok
+      end
+    end)
+  end
+
+  defp load_metrics(table) do
+    try do
+      path = metrics_file()
+      case File.read(path) do
+        {:ok, content} ->
+          case Jason.decode(content) do
+            {:ok, data} when is_map(data) ->
+              now = System.monotonic_time(:millisecond)
+              Enum.each(data, fn {agent, metrics} ->
+                :ets.insert(table, {agent, %{default_metrics(now) |
+                  total_tokens: metrics["total_tokens"] || 0,
+                  input_tokens: metrics["input_tokens"] || 0,
+                  output_tokens: metrics["output_tokens"] || 0,
+                  cost_usd: (metrics["cost_usd"] || 0.0) * 1.0,
+                  successes: metrics["successes"] || 0,
+                  failures: metrics["failures"] || 0
+                }})
+              end)
+            _ -> :ok
+          end
+        _ -> :ok
+      end
+    catch
+      _, _ -> :ok
+    end
   end
 end

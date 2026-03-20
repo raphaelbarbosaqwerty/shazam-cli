@@ -76,7 +76,7 @@ defmodule Shazam.CLI.YamlParser do
         supervisor: supervisor,
         domain: domain,
         workspace: config["workspace"],
-        budget: config["budget"] || 100_000,
+        budget: config["budget"],
         heartbeat_interval: config["heartbeat_interval"] || 60_000,
         model: config["model"],
         fallback_model: config["fallback_model"],
@@ -210,7 +210,7 @@ defmodule Shazam.CLI.YamlParser do
           lines = if a[:domain], do: lines ++ ["    domain: #{a.domain}"], else: lines
           lines = if a[:model], do: lines ++ ["    model: #{a.model}"], else: lines
           lines = if a[:config_file], do: lines ++ ["    config: #{a.config_file}"], else: lines
-          lines = lines ++ ["    budget: #{a[:budget] || 100_000}"]
+          lines = if a[:budget], do: lines ++ ["    budget: #{a.budget}"], else: lines
           lines = if a[:tools] && a[:tools] != [] do
             tools = a.tools |> Enum.map(&"      - #{&1}") |> Enum.join("\n")
             lines ++ ["    tools:\n#{tools}"]

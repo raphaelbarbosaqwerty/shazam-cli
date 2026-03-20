@@ -47,7 +47,7 @@ defmodule Shazam.CLI.TuiPort do
 
         # Send welcome event
         Helpers.send_event(port, "system", "info",
-          "Welcome to #{company_state[:name] || "Shazam"}. Type /start to boot agents, /help for commands.")
+          "Welcome to #{company_state[:name] || "Shazam"}. Starting agents...")
 
         # Subscribe to EventBus if available
         if Code.ensure_loaded?(Shazam.API.EventBus) do
@@ -57,6 +57,9 @@ defmodule Shazam.CLI.TuiPort do
             _ -> :ok
           end
         end
+
+        # Auto-start agents
+        state = Commands.handle_command("/start", state)
 
         # Enter event loop
         loop(state)
@@ -91,9 +94,9 @@ defmodule Shazam.CLI.TuiPort do
               loop(state)
           end
 
-        # Port closed — only cleanup path (no duplicate)
+        # Port closed (TUI exited)
         {port, {:exit_status, _code}} when port == state.port ->
-          Helpers.cleanup(state)
+          Helpers.shutdown(state)
 
         # EventBus events from agents/ralph
         {:event, event} ->
@@ -124,7 +127,7 @@ defmodule Shazam.CLI.TuiPort do
           after
             500 -> :ok
           end
-          Helpers.cleanup(state)
+          Helpers.shutdown(state)
 
         _other ->
           loop(state)

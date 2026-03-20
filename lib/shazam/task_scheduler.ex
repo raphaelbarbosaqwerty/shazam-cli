@@ -251,7 +251,11 @@ defmodule Shazam.TaskScheduler do
   def resolve_agent_profile(company_name, agent_name) do
     try do
       agents = Shazam.Company.get_agents(company_name)
-      Enum.find(agents, &(&1.name == agent_name))
+      # Match by name — handle both string and atom keys
+      Enum.find(agents, fn a ->
+        name = a[:name] || a.name
+        to_string(name) == to_string(agent_name)
+      end)
     rescue
       _ -> nil
     catch

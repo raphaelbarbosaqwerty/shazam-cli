@@ -139,7 +139,12 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     catch
       _, _ -> :ok
     end
+  end
+
+  def shutdown(state) do
+    cleanup(state)
     IO.puts("\nShazam session ended.")
+    System.halt(0)
   end
 
   def find_pm_name(state) do

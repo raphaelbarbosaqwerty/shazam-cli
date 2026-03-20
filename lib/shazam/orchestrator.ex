@@ -535,9 +535,27 @@ defmodule Shazam.Orchestrator do
             :ok
         end)
 
-      # Result
+      # Result — capture token usage and cost
       match?(%Message.ResultMessage{}, message) ->
         %Message.ResultMessage{} = result_msg = message
+
+        # Extract token usage
+        usage = result_msg.usage || %{}
+        input_tokens = usage[:input_tokens] || 0
+        output_tokens = usage[:output_tokens] || 0
+        total_tokens = input_tokens + output_tokens
+        cost_usd = result_msg.total_cost_usd || 0.0
+
+        # Record token usage in metrics
+        Shazam.Metrics.record_tokens(agent_name, total_tokens, cost_usd)
+
+        # Broadcast usage event
+        Shazam.API.EventBus.broadcast(%{
+          event: "agent_output",
+          agent: agent_name,
+          type: "text",
+          content: "Tokens: #{total_tokens} (in: #{input_tokens}, out: #{output_tokens}) | Cost: $#{Float.round(cost_usd, 4)}"
+        })
 
         content =
           if result_msg.is_error do

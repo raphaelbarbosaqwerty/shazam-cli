@@ -7,8 +7,8 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
   def handle_command("/quit", state) do
     Helpers.send_json(state.port, %{type: "quit"})
-    Process.sleep(100)
-    Helpers.cleanup(state)
+    Process.sleep(200)
+    Helpers.shutdown(state)
     state
   end
 
@@ -1085,6 +1085,11 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
     process_count = :erlang.system_info(:process_count)
 
+    # Token usage from metrics
+    all_metrics = if Code.ensure_loaded?(Shazam.Metrics), do: Shazam.Metrics.get_all(), else: %{}
+    total_tokens = all_metrics |> Map.values() |> Enum.reduce(0, fn m, acc -> acc + (m[:total_tokens] || 0) end)
+    total_cost = all_metrics |> Map.values() |> Enum.reduce(0.0, fn m, acc -> acc + (m[:cost_usd] || 0.0) end)
+
     lines = [
       "Memory Usage:",
       "  Total:     #{total_mb} MB",
@@ -1092,8 +1097,27 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "  ETS:       #{ets_mb} MB",
       "  Binary:    #{binary_mb} MB",
       "  Atoms:     #{atom_mb} MB",
-      "  System:    #{system_mb} MB"
+      "  System:    #{system_mb} MB",
+      "",
+      "Token Usage (cumulative):",
+      "  Total tokens: #{total_tokens}",
+      "  Total cost:   $#{Float.round(total_cost, 4)}"
     ]
+
+    # Per-agent breakdown
+    agent_lines = all_metrics
+      |> Enum.map(fn {agent, m} ->
+        tokens = m[:total_tokens] || 0
+        cost = m[:cost_usd] || 0.0
+        if tokens > 0, do: "  #{agent}: #{tokens} tokens ($#{Float.round(cost, 4)})", else: nil
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    lines = if agent_lines != [] do
+      lines ++ [""] ++ agent_lines
+    else
+      lines
+    end
 
     Enum.each(lines, fn line ->
       Helpers.send_event(state.port, "system", "info", line)

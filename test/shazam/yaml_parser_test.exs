@@ -334,6 +334,139 @@ defmodule Shazam.CLI.YamlParserTest do
     end
   end
 
+  # ── workspaces section ──────────────────────────────────
+
+  describe "transform/1 workspaces handling" do
+    test "parses workspaces section" do
+      yaml = Map.put(@valid_yaml, "workspaces", %{
+        "api" => %{"path" => "/projects/api", "domains" => ["backend"]},
+        "web" => %{"path" => "/projects/web", "domains" => ["frontend"]}
+      })
+
+      {:ok, config} = YamlParser.transform(yaml)
+
+      assert is_map(config.workspaces)
+      assert map_size(config.workspaces) == 2
+      assert config.workspaces["api"].path == "/projects/api"
+      assert config.workspaces["api"].domains == ["backend"]
+      assert config.workspaces["web"].path == "/projects/web"
+    end
+
+    test "workspaces is empty map when not present" do
+      {:ok, config} = YamlParser.transform(@valid_yaml)
+      assert config.workspaces == %{}
+    end
+
+    test "workspace with no domains defaults to empty list" do
+      yaml = Map.put(@valid_yaml, "workspaces", %{
+        "solo" => %{"path" => "/projects/solo"}
+      })
+
+      {:ok, config} = YamlParser.transform(yaml)
+      assert config.workspaces["solo"].domains == []
+    end
+  end
+
+  # ── agent workspace and config_file fields ─────────────────
+
+  describe "agent workspace and config_file fields" do
+    test "agent workspace field is captured" do
+      yaml = %{
+        "company" => %{"name" => "Co", "mission" => "Go"},
+        "agents" => %{
+          "dev" => %{"role" => "Developer", "workspace" => "api"}
+        }
+      }
+
+      {:ok, config} = YamlParser.transform(yaml)
+      dev = Enum.find(config.agents, &(&1.name == "dev"))
+      assert dev.workspace == "api"
+    end
+
+    test "agent config_file field is captured" do
+      yaml = %{
+        "company" => %{"name" => "Co", "mission" => "Go"},
+        "agents" => %{
+          "dev" => %{"role" => "Developer", "config" => "agents/dev.md"}
+        }
+      }
+
+      {:ok, config} = YamlParser.transform(yaml)
+      dev = Enum.find(config.agents, &(&1.name == "dev"))
+      assert dev.config_file == "agents/dev.md"
+    end
+
+    test "agent workspace is nil when not specified" do
+      {:ok, config} = YamlParser.transform(@valid_yaml)
+      pm = Enum.find(config.agents, &(&1.name == "pm"))
+      assert pm.workspace == nil
+    end
+
+    test "agent config_file is nil when not specified" do
+      {:ok, config} = YamlParser.transform(@valid_yaml)
+      pm = Enum.find(config.agents, &(&1.name == "pm"))
+      assert pm.config_file == nil
+    end
+  end
+
+  # ── missing budget defaults ────────────────────────────────
+
+  describe "agent budget defaults" do
+    test "missing budget is nil, not 100_000" do
+      yaml = %{
+        "company" => %{"name" => "Co", "mission" => "Go"},
+        "agents" => %{
+          "dev" => %{"role" => "Developer"}
+        }
+      }
+
+      {:ok, config} = YamlParser.transform(yaml)
+      dev = Enum.find(config.agents, &(&1.name == "dev"))
+      assert dev.budget == nil
+    end
+
+    test "explicit budget is preserved" do
+      {:ok, config} = YamlParser.transform(@valid_yaml)
+      pm = Enum.find(config.agents, &(&1.name == "pm"))
+      assert pm.budget == 50_000
+    end
+  end
+
+  # ── to_yaml workspaces output ──────────────────────────────
+
+  describe "to_yaml/1 workspaces output" do
+    test "outputs workspaces section" do
+      config = %{
+        name: "TestCo",
+        mission: "Build things",
+        agents: [],
+        domains: %{},
+        workspaces: %{
+          "api" => %{path: "/projects/api", domains: ["backend"]},
+          "web" => %{path: "/projects/web", domains: ["frontend"]}
+        }
+      }
+
+      yaml = YamlParser.to_yaml(config)
+      assert yaml =~ "workspaces:"
+      assert yaml =~ "api"
+      assert yaml =~ "/projects/api"
+      assert yaml =~ "backend"
+    end
+
+    test "omits workspaces section when empty" do
+      config = %{name: "Co", mission: "Go", agents: [], domains: %{}, workspaces: %{}}
+      yaml = YamlParser.to_yaml(config)
+      refute yaml =~ "workspaces:"
+    end
+
+    test "omits workspaces section when not present" do
+      config = %{name: "Co", mission: "Go", agents: [], domains: %{}}
+      yaml = YamlParser.to_yaml(config)
+      refute yaml =~ "workspaces:"
+    end
+  end
+
   # ── parse/1 — file not found ────────────────────────────
 
   describe "parse/1" do

@@ -365,8 +365,15 @@ defmodule Shazam.RalphLoop do
       # Only fetch tasks for THIS company
       pending = TaskBoard.list(%{status: :pending, company: state.company_name})
 
+      # Also check tasks without company (legacy/imported)
+      pending_no_company = TaskBoard.list(%{status: :pending})
+        |> Enum.filter(fn t -> t.company == nil or t.company == "" end)
+
+      all_pending = pending ++ pending_no_company
+      all_pending = Enum.uniq_by(all_pending, & &1.id)
+
       candidates =
-        pending
+        all_pending
         |> Enum.reject(fn task -> TaskScheduler.task_blocked?(task) end)
         |> Enum.reject(fn task -> Map.has_key?(state.running, task.id) end)
 
@@ -381,11 +388,18 @@ defmodule Shazam.RalphLoop do
 
     unless agent_profile do
       Logger.warning("[RalphLoop:#{state.company_name}] Agent '#{task.assigned_to}' not found, skipping task #{task.id}")
+      Shazam.API.EventBus.broadcast(%{
+        event: "task_skipped",
+        task_id: task.id,
+        agent: task.assigned_to,
+        reason: "Agent '#{task.assigned_to}' not found in company. Add it with /agent add #{task.assigned_to} --preset senior_dev"
+      })
       state
     else
-      # Check budget before executing
+      # Check budget before executing (nil or 0 = unlimited)
       tokens_used = get_agent_tokens(agent_profile.name)
-      if tokens_used >= agent_profile.budget do
+      budget = agent_profile.budget
+      if budget && budget > 0 && tokens_used >= budget do
         Logger.warning("[RalphLoop:#{state.company_name}] Agent '#{agent_profile.name}' exceeded budget (#{tokens_used}/#{agent_profile.budget} tokens) — skipping task #{task.id}")
         Shazam.FileLogger.warn("Budget exceeded: agent=#{agent_profile.name} used=#{tokens_used} budget=#{agent_profile.budget} task=#{task.id}")
         TaskBoard.fail(task.id, "Agent budget exceeded (#{tokens_used}/#{agent_profile.budget} tokens)")
