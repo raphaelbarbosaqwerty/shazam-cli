@@ -158,11 +158,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
     # Step 5: Resume
     try do
-      case Shazam.RalphLoop.resume(company_name) do
-        {:ok, _} ->
-          Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
-        _ ->
-          Helpers.send_event(state.port, "system", "info", "Could not resume. Try /start again.")
+      result = Shazam.RalphLoop.resume(company_name)
+      # resume returns :ok (not {:ok, _})
+      if result in [:ok, {:ok, :resumed}] do
+        Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
+      else
+        Helpers.send_event(state.port, "system", "info", "Resume returned: #{inspect(result)}")
       end
     catch
       :exit, _ ->
