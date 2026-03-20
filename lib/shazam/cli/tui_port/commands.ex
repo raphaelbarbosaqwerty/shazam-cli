@@ -181,10 +181,13 @@ defmodule Shazam.CLI.TuiPort.Commands do
   end
 
   def handle_command("/stop", state) do
-    company_name = state.company.name
-    if Code.ensure_loaded?(Shazam.RalphLoop) do
+    company_name = state.company[:name] || state.company.name
+    try do
       Shazam.RalphLoop.pause(company_name)
       Helpers.send_event(state.port, "system", "ralph_paused", "Agents stopped")
+    catch
+      :exit, _ -> Helpers.send_event(state.port, "system", "info", "RalphLoop not running")
+      _, _ -> :ok
     end
     Status.send_status(state)
     state
@@ -193,12 +196,17 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/pause", state), do: handle_command("/stop", state)
 
   def handle_command("/resume", state) do
-    company_name = state.company.name
-    if Code.ensure_loaded?(Shazam.RalphLoop) do
-      case Shazam.RalphLoop.resume(company_name) do
-        {:ok, _} -> Helpers.send_event(state.port, "system", "ralph_resumed", "Agents resumed")
-        _ -> Helpers.send_event(state.port, "system", "info", "Could not resume")
+    company_name = state.company[:name] || state.company.name
+    try do
+      result = Shazam.RalphLoop.resume(company_name)
+      if result in [:ok, {:ok, :resumed}] do
+        Helpers.send_event(state.port, "system", "ralph_resumed", "Agents resumed")
+      else
+        Helpers.send_event(state.port, "system", "info", "Resume returned: #{inspect(result)}")
       end
+    catch
+      :exit, _ -> Helpers.send_event(state.port, "system", "info", "RalphLoop not running. Try /start")
+      _, _ -> :ok
     end
     Status.send_status(state)
     state
