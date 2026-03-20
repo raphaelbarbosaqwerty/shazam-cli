@@ -260,7 +260,7 @@ defmodule Shazam.TaskScheduler do
 
     if agents do
       Enum.find(agents, fn a ->
-        name = a[:name] || a.name
+        name = if is_map(a) and not is_struct(a), do: a[:name] || a["name"], else: a.name
         to_string(name) == to_string(agent_name)
       end)
     else

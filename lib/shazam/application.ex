@@ -38,10 +38,11 @@ defmodule Shazam.Application do
 
     result = Supervisor.start_link(children, strategy: :one_for_one, name: Shazam.Supervisor)
 
-    # Restore saved state after the supervision tree is up
+    # Restore saved state — but only workspace, NOT companies
+    # Companies are started by /start command to avoid race conditions with RalphLoop
     case result do
       {:ok, _pid} ->
-        restore_saved_state()
+        restore_workspace()
         result
 
       other ->
@@ -49,8 +50,8 @@ defmodule Shazam.Application do
     end
   end
 
-  defp restore_saved_state do
-    # Restore workspace
+  defp restore_workspace do
+    # Only restore workspace path, NOT companies (they're started by /start)
     case Shazam.Store.load("workspace") do
       {:ok, %{"path" => path}} when is_binary(path) ->
         if File.dir?(path) do
@@ -62,56 +63,8 @@ defmodule Shazam.Application do
         :ok
     end
 
-    # Restore ALL companies (multi-project support)
-    company_keys = Shazam.Store.list_keys("company:")
-
-    # Also check legacy single "company" key for migration
-    company_keys = case Shazam.Store.load("company") do
-      {:ok, %{"name" => _}} -> ["company" | company_keys]
-      _ -> company_keys
-    end
-
-    Enum.each(company_keys, fn key ->
-      case Shazam.Store.load(key) do
-        {:ok, %{"name" => name, "mission" => mission, "agents" => agents_raw} = saved} ->
-          agents =
-            Enum.map(agents_raw, fn a ->
-              %{
-                name: a["name"],
-                role: a["role"],
-                supervisor: a["supervisor"],
-                domain: a["domain"],
-                budget: a["budget"] || 100_000,
-                heartbeat_interval: a["heartbeat_interval"] || 60_000,
-                tools: a["tools"] || [],
-                skills: a["skills"] || [],
-                modules: a["modules"] || [],
-                system_prompt: a["system_prompt"],
-                model: a["model"],
-                fallback_model: a["fallback_model"]
-              }
-            end)
-
-          domain_config = saved["domain_config"] || %{}
-
-          case Shazam.Company.start(%{name: name, mission: mission, agents: agents, domain_config: domain_config}) do
-            {:ok, _pid} ->
-              Logger.info("[Boot] Company '#{name}' restored with #{length(agents)} agent(s)")
-
-              # Migrate legacy key → namespaced key
-              if key == "company" do
-                Shazam.Store.save("company:#{name}", saved)
-                Shazam.Store.delete("company")
-                Logger.info("[Boot] Migrated legacy 'company' key → 'company:#{name}'")
-              end
-
-            {:error, reason} ->
-              Logger.warning("[Boot] Failed to restore company '#{name}': #{inspect(reason)}")
-          end
-
-        _ ->
-          :ok
-      end
-    end)
+    # Companies are NOT restored here — the /start command handles it
+    # This prevents race conditions where restored companies create paused RalphLoops
+    # that override the resumed one from /start
   end
 end
