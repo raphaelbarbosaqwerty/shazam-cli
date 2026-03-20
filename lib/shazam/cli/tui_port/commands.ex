@@ -128,43 +128,24 @@ defmodule Shazam.CLI.TuiPort.Commands do
         Helpers.send_event(state.port, "system", "error", "Failed to start company: #{inspect(reason)}")
     end
 
-    # Step 2: Ensure RalphLoop exists
-    unless Shazam.RalphLoop.exists?(company_name) do
-      # RalphLoop was killed or never started — start under supervisor (not linked to TUI)
-      try do
-        DynamicSupervisor.start_child(
-          Shazam.RalphLoopSupervisor,
-          {Shazam.RalphLoop, company_name}
-        )
-        Process.sleep(300)
-      catch
-        _, _ -> :ok
-      end
-    end
+    # Step 2: Wait for RalphLoop to be ready (Company creates it automatically)
+    wait_for_ralph(company_name, 15)
 
-    # Step 3: Wait for RalphLoop
-    wait_for_ralph(company_name, 10)
-
-    # Step 4: Apply config
-    if config[:ralph_config] && Shazam.RalphLoop.exists?(company_name) do
-      rc = config[:ralph_config] || config.ralph_config
+    # Step 3: Apply config
+    if Shazam.RalphLoop.exists?(company_name) do
       try do
+        rc = config[:ralph_config] || %{}
         if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
-        Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent] || 4)
+        if rc[:max_concurrent], do: Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent])
       catch
         _, _ -> :ok
       end
     end
 
-    # Step 5: Resume
+    # Step 4: Resume (RalphLoop starts paused by default)
     try do
-      result = Shazam.RalphLoop.resume(company_name)
-      # resume returns :ok (not {:ok, _})
-      if result in [:ok, {:ok, :resumed}] do
-        Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
-      else
-        Helpers.send_event(state.port, "system", "info", "Resume returned: #{inspect(result)}")
-      end
+      Shazam.RalphLoop.resume(company_name)
+      Helpers.send_event(state.port, "system", "ralph_resumed", "Agents are working")
     catch
       :exit, _ ->
         Helpers.send_event(state.port, "system", "info", "RalphLoop not ready. Try /start again.")

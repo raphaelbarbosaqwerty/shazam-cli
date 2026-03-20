@@ -1498,17 +1498,9 @@ defmodule Shazam.CLI.Repl do
     _, _ -> false
   end
 
-  defp clear_previous_session(company_name) do
-    # Stop only the current company's RalphLoop (other projects' loops remain)
-    if Code.ensure_loaded?(Shazam.RalphLoop) do
-      try do
-        if Shazam.RalphLoop.exists?(company_name) do
-          Shazam.RalphLoop.stop(company_name)
-        end
-      catch
-        _, _ -> :ok
-      end
-    end
+  defp clear_previous_session(_company_name) do
+    # Don't stop RalphLoop here — /start will handle resume
+    # Stopping it causes race conditions where Company recreates it paused
 
     # Reset metrics for a fresh session view
     if Code.ensure_loaded?(Shazam.Metrics) do
