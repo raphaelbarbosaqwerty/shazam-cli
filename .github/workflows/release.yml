@@ -98,12 +98,17 @@ jobs:
 
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-          cp "$SCRIPT_DIR/shazam" "$INSTALL_DIR/shazam"
+          cp "$SCRIPT_DIR/shazam-cli" "$INSTALL_DIR/shazam-cli"
           cp "$SCRIPT_DIR/shazam-tui" "$INSTALL_DIR/shazam-tui"
-          chmod +x "$INSTALL_DIR/shazam" "$INSTALL_DIR/shazam-tui"
+          chmod +x "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam-tui"
+          ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam"
+          ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shz"
 
           echo ""
           echo "Shazam installed to $INSTALL_DIR"
+          echo "  shazam-cli → main binary"
+          echo "  shazam     → alias"
+          echo "  shz        → alias"
           echo ""
           echo "Make sure $INSTALL_DIR is in your PATH:"
           echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
@@ -117,11 +122,11 @@ jobs:
           VERSION=${{ steps.version.outputs.version }}
           TARBALL="shazam-${VERSION}-${{ matrix.os_name }}-${{ matrix.arch }}.tar.gz"
           mkdir -p staging
-          cp shazam staging/
+          cp shazam-cli staging/
           cp shazam-tui/target/${{ matrix.rust_target }}/release/shazam-tui staging/
           cp install.sh staging/
           cd staging
-          tar czf "../${TARBALL}" shazam shazam-tui install.sh
+          tar czf "../${TARBALL}" shazam-cli shazam-tui install.sh
           cd ..
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
 
