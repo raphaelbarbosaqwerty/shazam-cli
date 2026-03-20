@@ -46,8 +46,11 @@ defmodule Shazam.CLI.TuiPort do
         Status.send_status(state)
 
         # Send welcome event
+        web_port = Application.get_env(:shazam, :port, 4040)
         Helpers.send_event(port, "system", "info",
           "Welcome to #{company_state[:name] || "Shazam"}. Type /start to boot agents, /help for commands.")
+        Helpers.send_event(port, "system", "info",
+          "Web dashboard available at http://localhost:#{web_port}")
 
         # Subscribe to EventBus if available
         if Code.ensure_loaded?(Shazam.API.EventBus) do

@@ -7,6 +7,12 @@ defmodule Shazam.Application do
     # Initialize persistence directory
     Shazam.Store.init()
 
+    # Set dynamic port for Phoenix Endpoint
+    port = Application.get_env(:shazam, :port, 4040)
+    endpoint_config = Application.get_env(:shazam, ShazamWeb.Endpoint, [])
+    endpoint_config = Keyword.put(endpoint_config, :http, [ip: {127, 0, 0, 1}, port: port])
+    Application.put_env(:shazam, ShazamWeb.Endpoint, endpoint_config)
+
     children = [
       # Registries
       {Registry, keys: :unique, name: Shazam.CompanyRegistry},
@@ -41,8 +47,11 @@ defmodule Shazam.Application do
       # Plugin Manager — loads .shazam/plugins/*.ex at runtime
       Shazam.PluginManager,
 
-      # HTTP API on port 4040
-      {Bandit, plug: Shazam.API.Router, port: Application.get_env(:shazam, :port, 4040), thousand_island_options: [num_acceptors: 10]}
+      # PubSub for Phoenix LiveView
+      {Phoenix.PubSub, name: Shazam.PubSub},
+
+      # Phoenix Endpoint (replaces standalone Bandit — serves API + LiveView + WebSocket)
+      ShazamWeb.Endpoint
     ]
 
     result = Supervisor.start_link(children, strategy: :one_for_one, name: Shazam.Supervisor)
