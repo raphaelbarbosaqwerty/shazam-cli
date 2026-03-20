@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.1 (2026-03-19)
+
+### Bug Fixes
+- **Critical: Tasks not executing since v0.3.0** — `resolve_agent_profile` used `a[:name]` on `AgentWorker` structs which don't implement the `Access` behaviour, causing `UndefinedFunctionError`. Every agent appeared as "not found", skipping all tasks silently.
+- **RalphLoop race condition** — Company's async `:attach_ralph_loop` could recreate RalphLoop after `/start` resume, reverting to paused state. Fixed by changing default to `paused: false` and removing company auto-restore from Application boot.
+- **Clean shutdown** — `Application.stop(:shazam)` called before `System.halt(0)` for proper OTP cleanup.
+
+### Diagnostics
+- Detailed RalphLoop logging to `/tmp/shazam-ralph.log` — pending counts, candidate details, agent resolution, checkout results.
+
 ## v0.4.0 (2026-03-19)
 
 ### Features
