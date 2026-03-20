@@ -27,13 +27,25 @@ export PATH="$HOME/.cargo/bin:$HOME/bin:$HOME/.local/bin:$PATH"
 if [ -d "$SHAZAM_DIR" ]; then
   echo -e "${DIM}Updating existing installation...${NC}"
   cd "$SHAZAM_DIR"
-  git checkout main --quiet 2>/dev/null
-  git fetch origin --quiet
-  git reset --hard origin/main --quiet
+  git fetch origin --tags --quiet
+  # Checkout latest tag for stable release
+  LATEST_TAG=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
+  if [ -n "$LATEST_TAG" ]; then
+    git checkout "$LATEST_TAG" --quiet 2>/dev/null
+    echo -e "  Using release: ${GREEN}${LATEST_TAG}${NC}"
+  else
+    git reset --hard origin/main --quiet
+  fi
 else
   echo -e "${DIM}Cloning shazam-cli...${NC}"
   git clone --quiet "$REPO" "$SHAZAM_DIR"
   cd "$SHAZAM_DIR"
+  # Checkout latest tag
+  LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+  if [ -n "$LATEST_TAG" ]; then
+    git checkout "$LATEST_TAG" --quiet 2>/dev/null
+    echo -e "  Using release: ${GREEN}${LATEST_TAG}${NC}"
+  fi
 fi
 
 echo ""
@@ -99,20 +111,23 @@ else
 
   echo "  [3/3] Building Elixir escript..."
   mix escript.build 2>&1 | head -5
-  echo -e "        ${GREEN}✓${NC} shazam built"
+  echo -e "        ${GREEN}✓${NC} shazam-cli built"
 
   # Install
   echo ""
   mkdir -p "$INSTALL_DIR"
 
-  cp shazam "$INSTALL_DIR/shazam"
-  chmod +x "$INSTALL_DIR/shazam"
+  # Install as shazam-cli (the real binary)
+  cp shazam-cli "$INSTALL_DIR/shazam-cli"
+  chmod +x "$INSTALL_DIR/shazam-cli"
 
   cp "shazam-tui/target/release/shazam-tui" "$INSTALL_DIR/shazam-tui"
   chmod +x "$INSTALL_DIR/shazam-tui"
 
-  # Create 'shz' alias (avoids conflict with macOS ShazamKit)
-  ln -sf "$INSTALL_DIR/shazam" "$INSTALL_DIR/shz"
+  # Create aliases: shazam -> shazam-cli, shz -> shazam-cli
+  # This avoids conflict with macOS /usr/bin/shazam (ShazamKit)
+  ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam"
+  ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shz"
 fi
 
 # ── PATH check ─────────────────────────────────────────────
@@ -137,11 +152,12 @@ fi
 
 echo -e "${GREEN}⚡ Shazam installed successfully!${NC}"
 echo ""
+echo "  Binaries installed:"
+echo -e "    ${GREEN}shazam-cli${NC}  — main binary"
+echo -e "    ${GREEN}shazam${NC}      — alias (overrides macOS ShazamKit)"
+echo -e "    ${GREEN}shz${NC}         — short alias"
+echo ""
 echo "  Get started:"
 echo -e "    ${YELLOW}shazam init${NC}      Create a shazam.yaml config"
 echo -e "    ${YELLOW}shazam${NC}           Open the interactive TUI"
-echo ""
-echo -e "  ${DIM}On macOS, if 'shazam' conflicts with Apple ShazamKit, use 'shz' instead:${NC}"
-echo -e "    ${YELLOW}shz init${NC}"
-echo -e "    ${YELLOW}shz${NC}"
 echo ""

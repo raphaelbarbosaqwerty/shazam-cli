@@ -102,7 +102,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     # Also check next to System argv0
     argv0_dir = case System.argv() do
       _ ->
-        case System.find_executable("shazam") do
+        case System.find_executable("shazam-cli") || System.find_executable("shazam") do
           nil -> self_dir
           path -> Path.dirname(path)
         end

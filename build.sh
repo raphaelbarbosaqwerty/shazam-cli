@@ -39,28 +39,34 @@ if [ ! -f "${PROJECT_DIR}/shazam-tui/target/release/shazam-tui" ]; then
 fi
 
 # ── Step 2: Build Elixir escript ───────────────────────────
-echo "  [2/3] Building Elixir escript (shazam)..."
+echo "  [2/3] Building Elixir escript (shazam-cli)..."
 cd "${PROJECT_DIR}"
 mix local.hex --force --if-missing > /dev/null 2>&1
 mix local.rebar --force --if-missing > /dev/null 2>&1
 mix deps.get --quiet 2>&1
 mix escript.build 2>&1
-echo "        ✓ shazam escript built"
+echo "        ✓ shazam-cli escript built"
 
 # ── Step 3: Install to ~/bin ───────────────────────────────
 echo "  [3/3] Installing to ${INSTALL_DIR}/..."
 mkdir -p "${INSTALL_DIR}"
 
-cp "${PROJECT_DIR}/shazam" "${INSTALL_DIR}/shazam"
-chmod +x "${INSTALL_DIR}/shazam"
+# Install as shazam-cli (the real binary)
+cp "${PROJECT_DIR}/shazam-cli" "${INSTALL_DIR}/shazam-cli"
+chmod +x "${INSTALL_DIR}/shazam-cli"
 
+# Install TUI binary
 cp "${PROJECT_DIR}/shazam-tui/target/release/shazam-tui" "${INSTALL_DIR}/shazam-tui"
 chmod +x "${INSTALL_DIR}/shazam-tui"
-echo "        ✓ shazam-tui → ${INSTALL_DIR}/shazam-tui"
 
-# Create 'shz' alias (avoids conflict with macOS ShazamKit /usr/bin/shazam)
-ln -sf "${INSTALL_DIR}/shazam" "${INSTALL_DIR}/shz"
-echo "        ✓ shazam    → ${INSTALL_DIR}/shazam"
-echo "        ✓ shz       → ${INSTALL_DIR}/shz (alias)"
+# Create aliases: shazam -> shazam-cli, shz -> shazam-cli
+# This avoids conflict with macOS /usr/bin/shazam (ShazamKit)
+ln -sf "${INSTALL_DIR}/shazam-cli" "${INSTALL_DIR}/shazam"
+ln -sf "${INSTALL_DIR}/shazam-cli" "${INSTALL_DIR}/shz"
+
+echo "        ✓ shazam-cli → ${INSTALL_DIR}/shazam-cli"
+echo "        ✓ shazam     → ${INSTALL_DIR}/shazam (alias)"
+echo "        ✓ shz        → ${INSTALL_DIR}/shz (alias)"
+echo "        ✓ shazam-tui → ${INSTALL_DIR}/shazam-tui"
 echo ""
 echo "  ⚡ Done! Run 'shazam init' then 'shazam' to start."

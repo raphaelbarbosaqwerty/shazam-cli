@@ -1,7 +1,7 @@
 defmodule Shazam.MixProject do
   use Mix.Project
 
-  @version "0.6.0"
+  @version "0.6.1"
 
   def project do
     [
@@ -24,7 +24,7 @@ defmodule Shazam.MixProject do
   defp escript do
     [
       main_module: Shazam.CLI,
-      name: "shazam",
+      name: "shazam-cli",
       app: nil  # don't auto-start OTP app — CLI manages it
     ]
   end

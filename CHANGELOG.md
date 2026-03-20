@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.1 (2026-03-20)
+
+### Changes
+- **Renamed binary to `shazam-cli`** — avoids conflict with macOS `/usr/bin/shazam` (ShazamKit)
+  - `shazam-cli` is the real binary
+  - `shazam` and `shz` are symlink aliases pointing to `shazam-cli`
+  - `~/bin/shazam` now always resolves to Shazam CLI, not Apple ShazamKit
+- **`shazam init`** now prompts for AI CLI provider (Claude, Codex, Cursor, Gemini)
+  - Auto-detects installed CLIs and shows status
+  - Generated YAML includes `provider:` field
+- **`setup.sh`** updated to install as `shazam-cli` with aliases
+- **`setup.sh`** now checks out latest git tag (stable releases)
+
 ## v0.6.0 (2026-03-20)
 
 ### Features
