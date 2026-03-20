@@ -96,25 +96,32 @@ defmodule Shazam.CLI.TuiPort.Commands do
   end
 
   def handle_command("/start", state) do
-    config = state.company.config
-    company_name = state.company.name
+    config = state.company[:config] || state.company.config
+    company_name = state.company[:name] || state.company.name
 
-    unless Shazam.RalphLoop.exists?(company_name) do
-      company_config = %{
-        name: company_name,
-        mission: config.mission,
-        agents: config.agents,
-        domain_config: config[:domain_config] || %{}
-      }
+    company_config = %{
+      name: company_name,
+      mission: config[:mission] || config.mission,
+      agents: config[:agents] || config.agents,
+      domain_config: config[:domain_config] || %{}
+    }
 
+    if Shazam.RalphLoop.exists?(company_name) do
+      # Already running — sync agents
+      try do
+        Shazam.Company.update_agents(company_name, company_config.agents)
+      catch
+        _, _ -> :ok
+      end
+      Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running (#{length(company_config.agents)} agents synced)")
+    else
       case Shazam.start_company(company_config) do
         {:ok, _} ->
           Helpers.send_event(state.port, "system", "company_started",
-            "Company '#{company_name}' started — #{length(config.agents)} agent(s)")
+            "Company '#{company_name}' started — #{length(company_config.agents)} agent(s)")
         {:error, {:already_started, _}} ->
-          # Sync agents from YAML to Company GenServer (in case new agents were added)
           try do
-            Shazam.Company.update_agents(company_name, config.agents)
+            Shazam.Company.update_agents(company_name, company_config.agents)
           catch
             _, _ -> :ok
           end

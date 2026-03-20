@@ -249,17 +249,47 @@ defmodule Shazam.TaskScheduler do
 
   @doc "Resolve an agent profile by company and agent name."
   def resolve_agent_profile(company_name, agent_name) do
-    try do
-      agents = Shazam.Company.get_agents(company_name)
-      # Match by name — handle both string and atom keys
-      Enum.find(agents, fn a ->
-        name = a[:name] || a.name
-        to_string(name) == to_string(agent_name)
-      end)
+    # Try Company GenServer first
+    agents = try do
+      Shazam.Company.get_agents(company_name)
     rescue
       _ -> nil
     catch
       :exit, _ -> nil
+    end
+
+    if agents do
+      Enum.find(agents, fn a ->
+        name = a[:name] || a.name
+        to_string(name) == to_string(agent_name)
+      end)
+    else
+      # Fallback: try to get agents from store
+      try do
+        case Shazam.Store.load("company:#{company_name}") do
+          {:ok, %{"agents" => stored_agents}} ->
+            Enum.find(stored_agents, fn a ->
+              to_string(a["name"]) == to_string(agent_name)
+            end)
+            |> case do
+              nil -> nil
+              a -> %{
+                name: a["name"],
+                role: a["role"],
+                supervisor: a["supervisor"],
+                domain: a["domain"],
+                budget: a["budget"],
+                tools: a["tools"] || [],
+                modules: a["modules"] || [],
+                system_prompt: a["system_prompt"],
+                model: a["model"]
+              }
+            end
+          _ -> nil
+        end
+      catch
+        _, _ -> nil
+      end
     end
   end
 
