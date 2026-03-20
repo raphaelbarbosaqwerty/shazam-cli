@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.7.0 (2026-03-20)
+
+### Features
+- **Context Manager** — cross-provider context persistence
+  - Agents accumulate context automatically as they complete tasks
+  - Works with ALL providers (Claude, Codex, Cursor, Gemini) — just text in the prompt
+  - Atomized storage: context split into small topic files per agent, not one giant file
+  - Auto-routing: entries go to the matching topic file by keyword overlap, or create new
+  - Auto-trim: topic files kept under 100 lines, team activity under 200 entries
+  - Agent index (`index.md`) auto-generated with links to all topics
+  - Configurable: `context_history`, `team_activity`, `context_budget` in shazam.yaml
+
+- **TF-IDF Search (ContextRAG)** — pure Elixir retrieval, zero external dependencies
+  - Indexes all `.md` files in `context/`, `tasks/`, `memories/` recursively
+  - TF-IDF scoring with stopword removal, augmented TF, partial match bonus
+  - Returns top-K most relevant chunks within a token budget
+  - Replaces keyword grep with ranked retrieval (~80-85% quality)
+
+- **Auto-extracted Learnings** — agents learn from their own output
+  - Regex patterns detect decisions, discoveries, tech stack, warnings
+  - File-path analysis detects frameworks (Vue, React, Supabase, etc.)
+  - Deduplication via Jaccard similarity (>0.7 = already known)
+  - Stored in `_learnings.md` per agent, injected as "What You Know" in prompts
+  - Consolidation: no repeated learnings across tasks
+
+### Storage Structure
+```
+.shazam/context/
+  agents/
+    senior_1/
+      index.md              # auto-generated links + key learnings
+      _learnings.md         # decisions, discoveries, patterns (deduped)
+      implement_jwt_auth.md # topic: auth work
+      build_rest_api.md     # topic: API endpoints
+    pm/
+      index.md
+      _learnings.md
+      plan_auth_system.md
+  team_activity.md          # chronological log (auto-trimmed)
+```
+
 ## v0.6.1 (2026-03-20)
 
 ### Changes

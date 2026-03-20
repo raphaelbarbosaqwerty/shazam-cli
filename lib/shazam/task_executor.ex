@@ -85,6 +85,10 @@ defmodule Shazam.TaskExecutor do
     if not provider_mod.supports_sessions?() do
       prompt = PromptBuilder.build_task_prompt(agent_profile, task, :new)
 
+      # Inject cross-provider context (task history, team activity, keyword matches)
+      context = Shazam.ContextManager.build_context(agent_profile.name, task)
+      prompt = if context != "", do: context <> "\n\n" <> prompt, else: prompt
+
       prompt = case Shazam.PluginManager.run_pipeline(
         :before_query, {prompt, agent_profile.name}, company_name: company_name
       ) do
@@ -124,6 +128,14 @@ defmodule Shazam.TaskExecutor do
         # :new → full context (role, ancestry, memory instructions)
         # :reused → lean prompt (just the task — agent already has context)
         prompt = PromptBuilder.build_task_prompt(agent_profile, task, session_type)
+
+        # Inject context for new sessions (reused sessions already have history)
+        prompt = if session_type == :new do
+          context = Shazam.ContextManager.build_context(agent_profile.name, task)
+          if context != "", do: context <> "\n\n" <> prompt, else: prompt
+        else
+          prompt
+        end
 
         # Plugin hook: before_query (can mutate prompt or halt)
         prompt = case Shazam.PluginManager.run_pipeline(

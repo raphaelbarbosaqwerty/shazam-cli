@@ -185,7 +185,10 @@ defmodule Shazam.CLI.YamlParser do
       poll_interval: config["poll_interval"] || 5_000,
       module_lock: Map.get(config, "module_lock", true),
       peer_reassign: Map.get(config, "peer_reassign", true),
-      qa_auto: config["qa_auto"] || false
+      qa_auto: config["qa_auto"] || false,
+      context_history: config["context_history"] || 5,
+      team_activity: config["team_activity"] || 10,
+      context_budget: config["context_budget"] || 4_000
     }
   end
   defp build_ralph_config(_), do: build_ralph_config(%{})

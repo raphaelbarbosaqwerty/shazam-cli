@@ -147,6 +147,12 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
         rc = config[:ralph_config] || %{}
         if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
         if rc[:max_concurrent], do: Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent])
+        # Apply ContextManager config
+        Shazam.ContextManager.configure(
+          context_history: rc[:context_history] || 5,
+          team_activity: rc[:team_activity] || 10,
+          context_budget: rc[:context_budget] || 4_000
+        )
       catch
         _, _ -> :ok
       end

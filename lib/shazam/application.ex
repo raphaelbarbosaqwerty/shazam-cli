@@ -32,6 +32,9 @@ defmodule Shazam.Application do
       # Agent Inbox — user message queue for terminal input
       Shazam.AgentInbox,
 
+      # Context persistence — cross-provider context continuity
+      Shazam.ContextManager,
+
       # Plugin Manager — loads .shazam/plugins/*.ex at runtime
       Shazam.PluginManager,
 

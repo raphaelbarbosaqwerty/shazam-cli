@@ -87,6 +87,7 @@ You (CEO) ──> describe task in natural language
 | **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
 | **Plugin system** | Extensible middleware — hook into task creation, completion, agent queries with `.shazam/plugins/*.ex` |
 | **Multi-provider** | Use different AI CLIs per agent — Claude Code, Codex, Cursor, Gemini |
+| **Context persistence** | Agents learn across tasks — TF-IDF retrieval, auto-extracted learnings, atomized topic files |
 
 ---
 
@@ -740,6 +741,60 @@ plugins:
 - `/plugins` — list loaded plugins
 - `/plugins reload` — hot-reload plugins from disk (no restart needed)
 
+### Context Persistence
+
+Agents automatically accumulate context as they complete tasks — they learn from their own output. This works with **all providers** (Claude, Codex, Cursor, Gemini).
+
+#### How it works
+
+1. Agent completes a task
+2. **ContextManager** extracts a summary + routes it to a topic file
+3. **Learnings** are auto-extracted (decisions, discoveries, tech stack, warnings)
+4. Next task: agent receives its history + team activity + TF-IDF relevant context
+
+#### Storage
+
+```
+.shazam/context/
+  agents/
+    senior_1/
+      index.md              # auto-generated links + key learnings
+      _learnings.md         # "Project uses Supabase", "JWT uses jose library"
+      implement_jwt_auth.md # everything about auth
+      build_rest_api.md     # endpoints created
+  team_activity.md          # chronological log of all agents
+```
+
+#### What agents receive in their prompt
+
+```
+## What You Know
+- Project uses Vue.js
+- Project uses Supabase
+- API uses JWT with 1h expiration via jose library
+
+## Your Recent Work
+### [2026-03-20 12:00] Fix JWT expiration
+  Changed token TTL...
+
+## Recent Team Activity
+### [2026-03-20 11:55] pm: Plan auth system
+  Delegated 3 subtasks...
+
+## Related Context
+### [2026-03-20 11:30] senior_2: Setup database
+  Created users table...
+```
+
+#### Configuration
+
+```yaml
+config:
+  context_history: 5      # last N tasks per agent
+  team_activity: 10       # last N team tasks
+  context_budget: 4000    # max chars injected into prompt
+```
+
 ### Subtask Delegation
 
 When a PM agent outputs a JSON block with subtasks, the SubtaskParser automatically creates child tasks:
@@ -829,6 +884,13 @@ export CODEX_CLI_BIN="codex"
 | `Shazam.CLI.REPL` | `cli/repl.ex` | Interactive shell with command history |
 | `Shazam.CLI.YamlParser` | `cli/yaml_parser.ex` | shazam.yaml parsing and validation |
 | `Shazam.CLI.Formatter` | `cli/formatter.ex` | Terminal output formatting (colors, tables) |
+
+### Context & Retrieval
+
+| Module | File | Description |
+|---|---|---|
+| `Shazam.ContextManager` | `context_manager.ex` | Cross-provider context persistence with atomized topic files |
+| `Shazam.ContextRAG` | `context_rag.ex` | TF-IDF retrieval engine — pure Elixir, zero dependencies |
 
 ### Provider System
 

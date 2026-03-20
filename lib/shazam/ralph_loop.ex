@@ -296,6 +296,13 @@ defmodule Shazam.RalphLoop do
             ModuleManager.auto_claim_modules(state.company_name, info.agent_name, touched_files)
             SubtaskParser.maybe_create_subtasks(task_id, info.agent_name, output, state.company_name, state.auto_approve)
             unblock_dependents(task_id)
+
+            # Capture context for cross-provider continuity
+            case TaskBoard.get(task_id) do
+              {:ok, task} -> Shazam.ContextManager.capture(info.agent_name, task, output, touched_files)
+              _ -> :ok
+            end
+
             Shazam.API.EventBus.broadcast(%{
               event: "task_completed",
               task_id: task_id,
@@ -322,6 +329,13 @@ defmodule Shazam.RalphLoop do
             Shazam.Metrics.record_completion(info.agent_name, duration_ms)
             SubtaskParser.maybe_create_subtasks(task_id, info.agent_name, output, state.company_name, state.auto_approve)
             unblock_dependents(task_id)
+
+            # Capture context for cross-provider continuity
+            case TaskBoard.get(task_id) do
+              {:ok, task} -> Shazam.ContextManager.capture(info.agent_name, task, output, [])
+              _ -> :ok
+            end
+
             Shazam.API.EventBus.broadcast(%{
               event: "task_completed",
               task_id: task_id,
