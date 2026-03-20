@@ -213,7 +213,7 @@ curl -fsSL https://raw.githubusercontent.com/raphaelbarbosaqwerty/shazam-cli/mai
 shazam update
 ```
 
-This fetches the latest version, rebuilds, and installs automatically. No manual steps needed.
+This fetches the latest **git tag** (e.g., `v0.6.0`), checks it out, rebuilds, and installs automatically. Updates always target stable tagged releases, not the HEAD of main.
 
 ---
 
@@ -416,7 +416,7 @@ USAGE: shazam <command> [options]
 | `apply` | Apply YAML config changes to running system | `-f/--file`, `-p/--port` |
 | `dashboard` | Interactive TUI dashboard | `-c/--company`, `-p/--port` |
 | `version` | Show version | — |
-| `update` | Auto-update to latest version (fetch + rebuild + install) | — |
+| `update` | Auto-update to latest tagged release (fetch tags + checkout + rebuild) | — |
 | `help` | Show help | — |
 
 ### Examples
