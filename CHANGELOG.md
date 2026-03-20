@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.1 (2026-03-20)
+
+### Features
+- **Plugin event filtering** — `events:` field in shazam.yaml restricts when a plugin is called
+  - Omit `events:` to run on all implemented callbacks (default)
+  - Example: `events: [after_task_complete, before_query]`
+  - `/plugins` command now shows which events each plugin listens to
+  - Available events: `on_init`, `before_task_create`, `after_task_create`, `before_task_complete`, `after_task_complete`, `before_query`, `after_query`, `on_tool_use`
+
 ## v0.5.0 (2026-03-20)
 
 ### Features
