@@ -66,6 +66,10 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/review --learn     — Learn patterns from recent merged PR reviews",
       "/review --patterns  — Show learned review patterns",
       "",
+      "Memory Bank:",
+      "/memory-bank        — Show project memory bank files",
+      "/memory-bank --update — Update memory bank by analyzing codebase",
+      "",
       "/exit               — Exit Shazam",
       "",
       "Tips:",
@@ -1143,6 +1147,81 @@ defmodule Shazam.CLI.TuiPort.Commands do
     state
   end
 
+  def handle_command("/memory-bank --update", state) do
+    company_name = Helpers.deep_get(state, [:company, :name])
+    pm_name = Helpers.find_pm_name(state)
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+
+    Helpers.send_event(state.port, "system", "info", "Updating project memory bank...")
+
+    # Create the memory bank directory structure
+    memories_dir = Path.join(workspace, ".shazam/memories")
+    File.mkdir_p!(Path.join(memories_dir, "project"))
+    File.mkdir_p!(Path.join(memories_dir, "agents"))
+    File.mkdir_p!(Path.join(memories_dir, "rules"))
+
+    prompt = """
+    Analyze this project's codebase thoroughly and create/update the memory bank files.
+
+    You must READ the actual project files to understand the codebase. Use Read, Grep, and Glob tools.
+
+    Create or update these files in .shazam/memories/:
+
+    1. **project/overview.md** — Project name, purpose, tech stack, main features, directory structure
+    2. **project/architecture.md** — Key architectural patterns, module organization, data flow
+    3. **project/conventions.md** — Code style, naming conventions, import order, error handling patterns
+    4. **rules/testing.md** — Testing framework, test patterns, what to test
+    5. **rules/git-workflow.md** — Branch naming, commit message format, PR process
+    6. **SKILL.md** — Root index linking to all memory files
+
+    Each file must have YAML frontmatter:
+    ```
+    ---
+    name: file-name
+    description: One line description
+    tags: tag1, tag2
+    ---
+    ```
+
+    Be thorough — read package.json/mix.exs for dependencies, look at folder structure,
+    read a few source files to understand patterns.
+    """
+
+    if Code.ensure_loaded?(Shazam.TaskBoard) do
+      Shazam.TaskBoard.create(%{
+        title: "Update project memory bank",
+        assigned_to: pm_name,
+        created_by: "human",
+        company: company_name,
+        description: prompt
+      })
+      Helpers.send_event(state.port, pm_name, "task_created", "Memory bank update task created")
+    end
+
+    Status.send_status(state)
+    state
+  end
+
+  def handle_command("/memory-bank", state) do
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    memories_dir = Path.join(workspace, ".shazam/memories")
+
+    if File.dir?(memories_dir) do
+      files = list_memory_files(memories_dir, "")
+      if files == [] do
+        Helpers.send_event(state.port, "system", "info", "Memory bank empty. Run /memory-bank --update")
+      else
+        Helpers.send_event(state.port, "system", "info", "Memory bank (.shazam/memories/):")
+        Enum.each(files, fn file ->
+          Helpers.send_event(state.port, "system", "info", "  #{file}")
+        end)
+      end
+    else
+      Helpers.send_event(state.port, "system", "info", "No memory bank found. Run /memory-bank --update")
+    end
+    state
+  end
+
   def handle_command("/" <> cmd, state) do
     Helpers.send_event(state.port, "system", "error", "Unknown command: /#{cmd}. Type /help for available commands.")
     state
@@ -1166,6 +1245,22 @@ defmodule Shazam.CLI.TuiPort.Commands do
     end
     Status.send_status(state)
     state
+  end
+
+  defp list_memory_files(dir, prefix) do
+    case File.ls(dir) do
+      {:ok, entries} ->
+        Enum.flat_map(entries, fn entry ->
+          path = Path.join(dir, entry)
+          display = if prefix == "", do: entry, else: "#{prefix}/#{entry}"
+          if File.dir?(path) do
+            list_memory_files(path, display)
+          else
+            [display]
+          end
+        end)
+      _ -> []
+    end
   end
 
   def handle_command(_, state), do: state
