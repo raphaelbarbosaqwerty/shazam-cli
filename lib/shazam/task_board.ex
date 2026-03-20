@@ -209,6 +209,7 @@ defmodule Shazam.TaskBoard do
     :ets.insert(state.table, {id, task})
     Logger.info("[TaskBoard] Task created (awaiting approval): #{id} - #{task.title}")
     broadcast(:task_awaiting_approval, task)
+    spawn(fn -> Shazam.TaskFiles.write_task(task) end)
 
     {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
   end
