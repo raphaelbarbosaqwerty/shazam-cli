@@ -76,6 +76,13 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/plan --show <id>    — Show plan details",
       "/plan --approve <id> — Approve plan and create all tasks",
       "",
+      "QA:",
+      "/qa                  — List QA checklists and status",
+      "/qa --generate <id>  — Generate QA doc for a task",
+      "/qa --validate <id>  — Assign QA agent to validate a task",
+      "/qa --report         — Generate daily QA report",
+      "/qa --auto on|off    — Toggle auto-generation on task completion",
+      "",
       "/exit               — Exit Shazam",
       "",
       "Tips:",
@@ -1295,6 +1302,106 @@ defmodule Shazam.CLI.TuiPort.Commands do
           })
           Helpers.send_event(state.port, pm_name, "task_created", "Planning task created. Once PM completes, review with /plan --show #{plan_id}")
         end
+    end
+
+    Status.send_status(state)
+    state
+  end
+
+  def handle_command("/qa" <> rest, state) do
+    args = String.trim(rest)
+    company_name = Helpers.deep_get(state, [:company, :name])
+
+    cond do
+      args == "" ->
+        # List QA docs
+        docs = Shazam.QAManager.list_docs()
+        if docs == [] do
+          Helpers.send_event(state.port, "system", "info", "No QA docs found. They are auto-generated when dev tasks complete.")
+        else
+          Enum.each(docs, fn d ->
+            icon = cond do
+              d.total == 0 -> "○"
+              d.checked == d.total -> "✓"
+              true -> "…"
+            end
+            Helpers.send_event(state.port, "system", "info", "  #{icon} #{d.task_id}: #{d.title} (#{d.checked}/#{d.total})")
+          end)
+        end
+
+      String.starts_with?(args, "--generate ") ->
+        task_id = String.trim_leading(args, "--generate ") |> String.trim()
+        if Code.ensure_loaded?(Shazam.TaskBoard) do
+          case Shazam.TaskBoard.get(task_id) do
+            {:ok, task} ->
+              case Shazam.QAManager.generate_qa_doc(task) do
+                {:ok, path} ->
+                  Helpers.send_event(state.port, "system", "info", "QA doc generated: #{Path.basename(path)}")
+                _ ->
+                  Helpers.send_event(state.port, "system", "error", "Failed to generate QA doc")
+              end
+            _ ->
+              Helpers.send_event(state.port, "system", "error", "Task #{task_id} not found")
+          end
+        end
+
+      args == "--report" ->
+        case Shazam.QAManager.generate_report() do
+          {:ok, path} ->
+            Helpers.send_event(state.port, "system", "info", "QA report generated: #{Path.basename(path)}")
+          _ ->
+            Helpers.send_event(state.port, "system", "error", "Failed to generate report")
+        end
+
+      args == "--auto on" ->
+        Application.put_env(:shazam, :qa_auto, true)
+        Helpers.send_event(state.port, "system", "info", "QA auto-generation: ON")
+
+      args == "--auto off" ->
+        Application.put_env(:shazam, :qa_auto, false)
+        Helpers.send_event(state.port, "system", "info", "QA auto-generation: OFF")
+
+      String.starts_with?(args, "--validate ") ->
+        task_id = String.trim_leading(args, "--validate ") |> String.trim()
+        if Code.ensure_loaded?(Shazam.TaskBoard) do
+          case Shazam.TaskBoard.get(task_id) do
+            {:ok, task} ->
+              # Find the QA doc
+              qa_dir = Shazam.QAManager.qa_dir()
+              qa_files = if File.dir?(qa_dir) do
+                File.ls!(qa_dir) |> Enum.find(fn f -> String.starts_with?(f, task_id) end)
+              end
+
+              if qa_files do
+                qa_path = Path.join(qa_dir, qa_files)
+                prompt = Shazam.QAManager.build_qa_prompt(task, qa_path)
+
+                # Find QA agent
+                agents = Helpers.deep_get(state, [:company, :agents]) || []
+                qa_agent = Enum.find(agents, fn a ->
+                  role = String.downcase(a[:role] || "")
+                  String.contains?(role, "qa") or String.contains?(role, "test")
+                end)
+                qa_name = if qa_agent, do: qa_agent[:name], else: Helpers.find_pm_name(state)
+
+                Shazam.TaskBoard.create(%{
+                  title: "QA Validate: #{task.title}",
+                  assigned_to: qa_name,
+                  created_by: "qa_system",
+                  company: company_name,
+                  description: prompt
+                })
+                Helpers.send_event(state.port, qa_name, "task_created", "QA validation task created for #{task_id}")
+              else
+                Helpers.send_event(state.port, "system", "error", "No QA doc found for #{task_id}. Run /qa --generate #{task_id}")
+              end
+            _ ->
+              Helpers.send_event(state.port, "system", "error", "Task #{task_id} not found")
+          end
+        end
+
+      true ->
+        Helpers.send_event(state.port, "system", "error", "Unknown /qa command. Use /qa, /qa --generate <id>, /qa --validate <id>, /qa --report, /qa --auto on|off")
     end
 
     Status.send_status(state)

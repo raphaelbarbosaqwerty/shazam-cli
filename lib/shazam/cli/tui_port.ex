@@ -265,6 +265,37 @@ defmodule Shazam.CLI.TuiPort do
       end
     end
 
+    # Auto-generate QA docs for completed dev tasks
+    if event_type == "task_completed" and Application.get_env(:shazam, :qa_auto, false) do
+      try do
+        task_id_val = event[:task_id] || event["task_id"]
+        if task_id_val do
+          case Shazam.TaskBoard.get(task_id_val) do
+            {:ok, task} ->
+              # Only for dev tasks (not PM planning, not QA validation, not reviews)
+              created_by = task.created_by || ""
+              title = task.title || ""
+              is_dev_task = not String.starts_with?(title, "Create plan:") and
+                            not String.starts_with?(title, "QA Validate:") and
+                            not String.starts_with?(title, "Review PR") and
+                            not String.starts_with?(title, "Update project memory") and
+                            created_by != "qa_system"
+
+              if is_dev_task do
+                case Shazam.QAManager.generate_qa_doc(task) do
+                  {:ok, _path} ->
+                    Helpers.send_event(state.port, "system", "info", "QA doc auto-generated for #{task_id_val}")
+                  _ -> :ok
+                end
+              end
+            _ -> :ok
+          end
+        end
+      catch
+        _, _ -> :ok
+      end
+    end
+
     # Update status on relevant events
     if event_type in ~w(task_created task_completed task_failed task_started task_approved task_rejected ralph_resumed ralph_paused task_killed task_paused task_resumed) do
       Status.send_status(state)

@@ -40,3 +40,4 @@ config:
   poll_interval: 5000
   module_lock: true
   peer_reassign: true
+  qa_auto: true            # Auto-generate QA checklists when dev tasks complete

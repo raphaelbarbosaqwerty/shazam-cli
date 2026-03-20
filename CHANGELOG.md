@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.4.0 (2026-03-19)
+
+### Features
+- **QA System** — automated QA checklists with test cases
+  - `/qa` — list QA docs and status
+  - `/qa --generate <id>` — generate QA doc for a completed task
+  - `/qa --validate <id>` — assign QA agent to run validation
+  - `/qa --report` — generate daily QA report
+  - `/qa --auto on|off` — auto-generate QA docs on task completion
+  - `qa_auto: true` in shazam.yaml config
+  - QA docs saved in `.shazam/qa/` with test case tables and checkboxes
+  - QA agent marks [x] for passing tests, creates bug reports for failures
+  - README index auto-updated with progress tracking
+
+- **Plan System** — phased execution planning
+  - `/plan <description>` — PM creates a phased plan
+  - `/plan --list` — list all plans
+  - `/plan --show <id>` — show plan with phases and tasks
+  - `/plan --approve <id>` — create all tasks with dependencies (auto-approved)
+  - Plans saved in `.shazam/plans/` as .md files
+  - Auto-parse PM output on completion
+
+- **Memory Bank** — project knowledge management
+  - `/memory-bank` — list memory bank files
+  - `/memory-bank --update` — PM analyzes codebase and creates skill memories
+
 ## v0.3.0 (2026-03-19)
 
 ### Features

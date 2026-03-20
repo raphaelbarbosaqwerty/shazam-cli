@@ -1,5 +1,5 @@
 defmodule Shazam.CLI do
-  @version "0.3.0"
+  @version "0.4.0"
   @moduledoc """
   Main entry point for the `shazam` escript binary.
 
@@ -103,7 +103,7 @@ defmodule Shazam.CLI do
   # ── version ────────────────────────────────────────────────
 
   defp cmd_version do
-    IO.puts([IO.ANSI.bright(), "shazam", IO.ANSI.reset(), " v0.3.0"])
+    IO.puts([IO.ANSI.bright(), "shazam", IO.ANSI.reset(), " v0.4.0"])
     IO.puts([IO.ANSI.faint(), "  Elixir #{System.version()} • OTP #{System.otp_release()}", IO.ANSI.reset()])
     IO.puts([IO.ANSI.faint(), "  Data: ~/.shazam/", IO.ANSI.reset()])
     IO.puts([IO.ANSI.faint(), "  Logs: ~/.shazam/logs/", IO.ANSI.reset()])

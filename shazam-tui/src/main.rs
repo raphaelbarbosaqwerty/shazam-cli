@@ -539,6 +539,11 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/plan --list", ""),
     ("/plan --show ", "show plan details"),
     ("/plan --approve ", "approve and create tasks"),
+    ("/qa", "list QA docs"),
+    ("/qa --generate ", "generate QA doc for task"),
+    ("/qa --validate ", "run QA validation"),
+    ("/qa --report", "generate QA report"),
+    ("/qa --auto ", "toggle auto QA generation"),
     ("/exit", "exit shazam"),
 ];
 

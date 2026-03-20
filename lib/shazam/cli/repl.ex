@@ -195,6 +195,9 @@ defmodule Shazam.CLI.Repl do
       if config[:ralph_config] do
         rc = config.ralph_config
         try do
+          if rc[:qa_auto] do
+            Application.put_env(:shazam, :qa_auto, true)
+          end
           if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
           Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent] || 4)
           Shazam.RalphLoop.set_config(company_name, "poll_interval", rc[:poll_interval] || 5000)

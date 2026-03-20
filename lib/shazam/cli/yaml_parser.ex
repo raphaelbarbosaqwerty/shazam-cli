@@ -162,7 +162,8 @@ defmodule Shazam.CLI.YamlParser do
       max_retries: config["max_retries"] || 2,
       poll_interval: config["poll_interval"] || 5_000,
       module_lock: Map.get(config, "module_lock", true),
-      peer_reassign: Map.get(config, "peer_reassign", true)
+      peer_reassign: Map.get(config, "peer_reassign", true),
+      qa_auto: config["qa_auto"] || false
     }
   end
   defp build_ralph_config(_), do: build_ralph_config(%{})

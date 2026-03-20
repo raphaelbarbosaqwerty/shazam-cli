@@ -82,6 +82,8 @@ You (CEO) ──> describe task in natural language
 | **File mentions** | Type `@path/to/file` in tasks to include file contents as context |
 | **Image attachments** | Paste image paths into tasks — auto-saved to `.shazam/attachments/` |
 | **Token tracking** | Real-time token usage and cost ($) per agent, persisted across sessions |
+| **QA checklists** | Auto-generated test cases for completed tasks, QA agent validates and marks checkboxes |
+| **Execution plans** | `/plan` creates phased plans with dependencies, approve to create all tasks at once |
 | **Editable agent configs** | Agent prompts stored as .md files in .shazam/agents/ — fully customizable |
 
 ---
