@@ -120,17 +120,26 @@ defmodule Shazam.CLI do
     if File.dir?(shazam_dir) do
       IO.puts("  Fetching latest version...")
 
-      {_, 0} = System.cmd("git", ["fetch", "origin"], cd: shazam_dir, stderr_to_stdout: true)
+      {_, 0} = System.cmd("git", ["fetch", "origin", "--tags"], cd: shazam_dir, stderr_to_stdout: true)
 
-      # Check if there are updates
-      {local, 0} = System.cmd("git", ["rev-parse", "HEAD"], cd: shazam_dir)
-      {remote, 0} = System.cmd("git", ["rev-parse", "origin/main"], cd: shazam_dir)
+      # Get the latest tag (e.g., v0.6.0)
+      {latest_tag, 0} = System.cmd("git", ["describe", "--tags", "--abbrev=0", "origin/main"], cd: shazam_dir)
+      latest_tag = String.trim(latest_tag)
 
-      if String.trim(local) == String.trim(remote) do
-        Formatter.success("Already up to date! (v#{@version})")
-      else
-        IO.puts("  New version available. Updating...")
+      if latest_tag == "" do
+        # No tags — fall back to origin/main
+        IO.puts("  No tags found. Updating to latest main...")
         System.cmd("git", ["reset", "--hard", "origin/main"], cd: shazam_dir, stderr_to_stdout: true)
+      else
+        # Check if we're already on the latest tag
+        {current_tag, _} = System.cmd("git", ["describe", "--tags", "--exact-match", "HEAD"], cd: shazam_dir, stderr_to_stdout: true)
+        current_tag = String.trim(current_tag)
+
+        if current_tag == latest_tag do
+          Formatter.success("Already up to date! #{latest_tag} (v#{@version})")
+        else
+          IO.puts("  New version available: #{latest_tag} (current: v#{@version}). Updating...")
+          System.cmd("git", ["checkout", latest_tag], cd: shazam_dir, stderr_to_stdout: true)
 
         IO.puts("  Rebuilding...")
         build_script = Path.join(shazam_dir, "build.sh")
@@ -149,6 +158,7 @@ defmodule Shazam.CLI do
           end
         else
           Formatter.error("build.sh not found at #{build_script}")
+        end
         end
       end
     else
