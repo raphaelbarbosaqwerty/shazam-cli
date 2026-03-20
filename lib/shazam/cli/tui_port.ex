@@ -235,6 +235,36 @@ defmodule Shazam.CLI.TuiPort do
       end
     end
 
+    # Auto-save plans from completed planning tasks
+    if event_type == "task_completed" do
+      try do
+        task_id_val = event[:task_id] || event["task_id"]
+        if task_id_val do
+          case Shazam.TaskBoard.get(task_id_val) do
+            {:ok, task} when task.created_by == "human" ->
+              if String.starts_with?(task.title || "", "Create plan:") and is_binary(task.result) do
+                plan_id_match = Regex.run(~r/Plan ID: (plan_\d+)/, task.description || "")
+                plan_id = case plan_id_match do
+                  [_, id] -> id
+                  _ -> Shazam.PlanManager.next_id()
+                end
+
+                case Shazam.PlanManager.parse_plan_from_output(plan_id, task.result) do
+                  {:ok, plan} ->
+                    Shazam.PlanManager.save_plan(plan)
+                    Helpers.send_event(state.port, "system", "info",
+                      "Plan '#{plan.title}' saved as #{plan_id}. Review: /plan --show #{plan_id} | Approve: /plan --approve #{plan_id}")
+                  _ -> :ok
+                end
+              end
+            _ -> :ok
+          end
+        end
+      catch
+        _, _ -> :ok
+      end
+    end
+
     # Update status on relevant events
     if event_type in ~w(task_created task_completed task_failed task_started task_approved task_rejected ralph_resumed ralph_paused task_killed task_paused task_resumed) do
       Status.send_status(state)

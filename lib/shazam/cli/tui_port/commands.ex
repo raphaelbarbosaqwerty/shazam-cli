@@ -70,6 +70,12 @@ defmodule Shazam.CLI.TuiPort.Commands do
       "/memory-bank        — Show project memory bank files",
       "/memory-bank --update — Update memory bank by analyzing codebase",
       "",
+      "Planning:",
+      "/plan <description>  — Create an execution plan (PM analyzes and generates)",
+      "/plan --list         — List all plans",
+      "/plan --show <id>    — Show plan details",
+      "/plan --approve <id> — Approve plan and create all tasks",
+      "",
       "/exit               — Exit Shazam",
       "",
       "Tips:",
@@ -1219,6 +1225,79 @@ defmodule Shazam.CLI.TuiPort.Commands do
     else
       Helpers.send_event(state.port, "system", "info", "No memory bank found. Run /memory-bank --update")
     end
+    state
+  end
+
+  def handle_command("/plan " <> description, state) do
+    description = String.trim(description)
+    company_name = Helpers.deep_get(state, [:company, :name])
+    pm_name = Helpers.find_pm_name(state)
+
+    cond do
+      description == "--list" ->
+        plans = Shazam.PlanManager.list_plans()
+        if plans == [] do
+          Helpers.send_event(state.port, "system", "info", "No plans found. Create one with /plan <description>")
+        else
+          Enum.each(plans, fn p ->
+            task_count = length(p.tasks)
+            Helpers.send_event(state.port, "system", "info", "  #{p.id}: [#{p.status}] #{p.title} (#{task_count} tasks)")
+          end)
+        end
+
+      String.starts_with?(description, "--approve ") ->
+        plan_id = String.trim_leading(description, "--approve ") |> String.trim()
+        case Shazam.PlanManager.read_plan(plan_id) do
+          {:ok, plan} ->
+            case Shazam.PlanManager.create_tasks_from_plan(plan, company_name) do
+              {:ok, count} ->
+                Helpers.send_event(state.port, "system", "info", "Plan '#{plan.title}' approved — #{count} tasks created (auto-approved)")
+              {:error, reason} ->
+                Helpers.send_event(state.port, "system", "error", "Failed to create tasks: #{inspect(reason)}")
+            end
+          {:error, _} ->
+            Helpers.send_event(state.port, "system", "error", "Plan #{plan_id} not found")
+        end
+
+      String.starts_with?(description, "--show ") ->
+        plan_id = String.trim_leading(description, "--show ") |> String.trim()
+        case Shazam.PlanManager.read_plan(plan_id) do
+          {:ok, plan} ->
+            Helpers.send_event(state.port, "system", "info", "Plan: #{plan.title} [#{plan.status}]")
+            plan.tasks
+            |> Enum.group_by(fn t -> t[:phase] || "Tasks" end)
+            |> Enum.each(fn {phase, tasks} ->
+              Helpers.send_event(state.port, "system", "info", "  #{phase}:")
+              Enum.each(tasks, fn t ->
+                dep = if t[:depends_on], do: " (after: #{t.depends_on})", else: ""
+                agent = t[:assigned_to] || "unassigned"
+                Helpers.send_event(state.port, "system", "info", "    - #{t.title} → #{agent}#{dep}")
+              end)
+            end)
+          {:error, _} ->
+            Helpers.send_event(state.port, "system", "error", "Plan #{plan_id} not found")
+        end
+
+      true ->
+        # Create a new plan
+        Helpers.send_event(state.port, pm_name, "info", "Creating plan: #{description}...")
+
+        prompt = Shazam.PlanManager.build_plan_prompt(description)
+        plan_id = Shazam.PlanManager.next_id()
+
+        if Code.ensure_loaded?(Shazam.TaskBoard) do
+          Shazam.TaskBoard.create(%{
+            title: "Create plan: #{description}",
+            assigned_to: pm_name,
+            created_by: "human",
+            company: company_name,
+            description: prompt <> "\n\nPlan ID: #{plan_id}\nAfter generating the plan JSON, the system will save it for review."
+          })
+          Helpers.send_event(state.port, pm_name, "task_created", "Planning task created. Once PM completes, review with /plan --show #{plan_id}")
+        end
+    end
+
+    Status.send_status(state)
     state
   end
 

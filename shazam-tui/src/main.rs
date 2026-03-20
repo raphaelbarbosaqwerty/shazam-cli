@@ -535,6 +535,10 @@ const COMMANDS: &[(&str, &str)] = &[
     ("/review --resolve ", "resolve conversation threads"),
     ("/review --learn", ""),
     ("/review --patterns", ""),
+    ("/plan ", "create execution plan"),
+    ("/plan --list", ""),
+    ("/plan --show ", "show plan details"),
+    ("/plan --approve ", "approve and create tasks"),
     ("/exit", "exit shazam"),
 ];
 

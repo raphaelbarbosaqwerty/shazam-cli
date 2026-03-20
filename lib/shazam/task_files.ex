@@ -91,28 +91,50 @@ defmodule Shazam.TaskFiles do
     end)
   end
 
-  @doc "Sync tasks from files to TaskBoard (import)."
+  @doc "Sync tasks from files to TaskBoard (import). Skips tasks already in ETS."
   def sync_from_files do
-    read_all()
-    |> Enum.each(fn task_map ->
-      if Code.ensure_loaded?(Shazam.TaskBoard) do
-        # Only import if task doesn't exist in ETS
-        case Shazam.TaskBoard.get(task_map.id) do
-          {:ok, _} ->
-            :ok
+    tasks = read_all()
+    if Code.ensure_loaded?(Shazam.TaskBoard) do
+      # Get all existing task IDs to avoid duplicates
+      existing_ids = try do
+        Shazam.TaskBoard.list()
+        |> Enum.map(& &1.id)
+        |> MapSet.new()
+      catch
+        _, _ -> MapSet.new()
+      end
 
-          {:error, :not_found} ->
+      Enum.each(tasks, fn task_map ->
+        # Skip if task ID already exists OR if title+company match
+        already_exists = MapSet.member?(existing_ids, task_map.id) or
+          try do
+            Shazam.TaskBoard.list()
+            |> Enum.any?(fn t -> t.title == task_map.title and t.company == task_map[:company] end)
+          catch
+            _, _ -> false
+          end
+
+        unless already_exists do
+          status = try do
+            String.to_existing_atom(task_map.status)
+          rescue
+            _ -> :pending
+          end
+
+          # Skip completed/failed/deleted tasks — they're history
+          if status in [:pending, :in_progress, :awaiting_approval] do
             Shazam.TaskBoard.create(%{
               title: task_map.title,
-              status: String.to_existing_atom(task_map.status),
+              status: status,
               assigned_to: task_map[:assigned_to],
               created_by: task_map[:created_by],
               company: task_map[:company],
               description: task_map[:description]
             })
+          end
         end
-      end
-    end)
+      end)
+    end
   end
 
   # ── Private ──────────────────────────────────────────────

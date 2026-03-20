@@ -243,7 +243,24 @@ fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let mut spans = vec![prompt, Span::raw(&state.input)];
+    // Highlight @mentions in cyan
+    let mut input_spans = vec![prompt];
+    let mut remaining = state.input.as_str();
+    while let Some(at_pos) = remaining.find('@') {
+        if at_pos > 0 {
+            input_spans.push(Span::raw(remaining[..at_pos].to_string()));
+        }
+        // Find end of @mention (space or end of string)
+        let after_at = &remaining[at_pos + 1..];
+        let end = after_at.find(|c: char| c.is_whitespace()).unwrap_or(after_at.len());
+        let mention = &remaining[at_pos..at_pos + 1 + end];
+        input_spans.push(Span::styled(mention.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        remaining = &remaining[at_pos + 1 + end..];
+    }
+    if !remaining.is_empty() {
+        input_spans.push(Span::raw(remaining.to_string()));
+    }
+    let mut spans = input_spans;
 
     // Ghost text (completable part) — included in wrapping spans
     // Hint (display-only description) — kept separate, appended to last line only
