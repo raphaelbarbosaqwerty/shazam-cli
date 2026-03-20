@@ -91,7 +91,13 @@ defmodule Shazam.CLI.TuiPort.Commands do
           Helpers.send_event(state.port, "system", "company_started",
             "Company '#{company_name}' started — #{length(config.agents)} agent(s)")
         {:error, {:already_started, _}} ->
-          Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running")
+          # Sync agents from YAML to Company GenServer (in case new agents were added)
+          try do
+            Shazam.Company.update_agents(company_name, config.agents)
+          catch
+            _, _ -> :ok
+          end
+          Helpers.send_event(state.port, "system", "info", "Company '#{company_name}' already running (agents synced)")
         {:error, reason} ->
           Helpers.send_event(state.port, "system", "error", "Failed to start: #{inspect(reason)}")
       end
@@ -355,10 +361,11 @@ defmodule Shazam.CLI.TuiPort.Commands do
         }
       end
 
-      # Add to running company if available
+      # Update the running company with all agents (including the new one)
       if Code.ensure_loaded?(Shazam.Company) do
         try do
-          Shazam.Company.add_agent(state.company.name, new_agent)
+          all_agents = ((Helpers.deep_get(state, [:company, :agents]) || []) ++ [new_agent])
+          Shazam.Company.update_agents(state.company.name, all_agents)
         catch
           _, _ -> :ok
         end
