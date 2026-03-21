@@ -483,16 +483,18 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                 KeyCode::Backspace => {
                     if state.cursor_pos > 0 {
                         state.cursor_pos -= 1;
-                        let byte_idx = char_to_byte_index(&state.input, state.cursor_pos);
-                        state.input.remove(byte_idx);
+                        let byte_start = char_to_byte_index(&state.input, state.cursor_pos);
+                        let byte_end = char_to_byte_index(&state.input, state.cursor_pos + 1);
+                        state.input.drain(byte_start..byte_end);
                         state.ghost_text = suggest_command(&state.input);
                     }
                 }
                 KeyCode::Delete => {
                     let char_count = state.input.chars().count();
                     if state.cursor_pos < char_count {
-                        let byte_idx = char_to_byte_index(&state.input, state.cursor_pos);
-                        state.input.remove(byte_idx);
+                        let byte_start = char_to_byte_index(&state.input, state.cursor_pos);
+                        let byte_end = char_to_byte_index(&state.input, state.cursor_pos + 1);
+                        state.input.drain(byte_start..byte_end);
                         state.ghost_text = suggest_command(&state.input);
                     }
                 }

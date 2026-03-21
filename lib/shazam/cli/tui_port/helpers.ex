@@ -26,7 +26,8 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   end
 
   def expand_paste_tokens(text, store) do
-    Regex.replace(~r/\[Pasted text #(\d+) \+\d+ lines\]/, text, fn _, id_str ->
+    # Match both old format [Pasted text #1 +50 lines] and new format [Paste #1 — N lines/chars]
+    Regex.replace(~r/\[Paste(?:d text)? #(\d+)[^\]]*\]/, text, fn _, id_str ->
       id = String.to_integer(id_str)
       case Map.get(store, id) do
         %{content: content} -> "\n```\n#{content}\n```\n"
