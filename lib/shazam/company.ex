@@ -311,12 +311,12 @@ defmodule Shazam.Company do
 
     statuses =
       Enum.map(state.agents, fn agent ->
-        # Per-agent metrics from the database (tokens, duration, success/failure)
+        # Per-agent metrics from Metrics GenServer
         metrics =
           try do
-            Shazam.Repo.get_metrics(agent.name)
-          rescue
-            _ -> %{total: 0, successes: 0, failures: 0, total_tokens: 0}
+            Shazam.Metrics.get_agent(agent.name) || %{}
+          catch
+            _, _ -> %{}
           end
 
         # Count tasks by status for this agent

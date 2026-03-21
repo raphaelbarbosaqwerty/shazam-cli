@@ -37,7 +37,6 @@ defmodule Shazam.MixProject do
       {:jason, "~> 1.4"},
       {:cors_plug, "~> 3.0"},
       {:websock_adapter, "~> 0.5"},
-      {:exqlite, "~> 0.27"},
       {:yaml_elixir, "~> 2.9"}
     ]
   end
