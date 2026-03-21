@@ -153,8 +153,118 @@ defmodule Shazam.TaskBoard do
   def init(_opts) do
     table = :ets.new(:shazam_tasks, [:set, :protected, read_concurrency: true])
     counter = Persistence.load_tasks(table)
-    Logger.info("[TaskBoard] Started with #{counter} task(s) restored from disk")
+
+    # Also import from .shazam/tasks/ markdown files (workspace-local)
+    # This runs in init so tasks are available immediately
+    counter = try do
+      import_from_task_files(table, counter)
+    rescue
+      _ -> counter
+    catch
+      _, _ -> counter
+    end
+
+    Logger.info("[TaskBoard] Started with #{:ets.info(table, :size)} task(s)")
     {:ok, %{table: table, counter: counter, save_timer: nil}}
+  end
+
+  defp import_from_task_files(table, counter) do
+    workspace = Application.get_env(:shazam, :workspace, nil)
+    dir = if workspace do
+      Path.join(workspace, ".shazam/tasks")
+    else
+      # Try cwd as fallback
+      Path.join(File.cwd!(), ".shazam/tasks")
+    end
+
+    if File.dir?(dir) do
+      dir
+      |> File.ls!()
+      |> Enum.filter(&String.ends_with?(&1, ".md"))
+      |> Enum.reduce(counter, fn filename, max_counter ->
+        path = Path.join(dir, filename)
+        try do
+          case File.read(path) do
+            {:ok, content} ->
+              case Regex.run(~r/\A---\n(.*?)\n---\n?(.*)/s, content) do
+                [_, frontmatter, body] ->
+                  meta = parse_frontmatter_simple(frontmatter)
+                  id = meta["id"]
+
+                  if id && not :ets.member(table, id) do
+                    status = case meta["status"] do
+                      "completed" -> :completed
+                      "failed" -> :failed
+                      "pending" -> :pending
+                      "in_progress" -> :pending
+                      "awaiting_approval" -> :awaiting_approval
+                      "paused" -> :paused
+                      _ -> :pending
+                    end
+
+                    description = case Regex.run(~r/## Description\s*\n\n(.*?)(?=\n## |\z)/s, body) do
+                      [_, d] -> d
+                      _ -> nil
+                    end
+
+                    result = case Regex.run(~r/## Result\s*\n\n(.*?)(?=\n## |\z)/s, body) do
+                      [_, r] -> String.slice(r, 0..10_000)
+                      _ -> nil
+                    end
+
+                    now = DateTime.utc_now()
+                    task = %{
+                      id: id,
+                      title: meta["title"] || filename,
+                      description: description,
+                      status: status,
+                      assigned_to: meta["assigned_to"],
+                      created_by: meta["created_by"],
+                      company: meta["company"],
+                      result: result,
+                      parent_task_id: nil,
+                      depends_on: nil,
+                      attachments: [],
+                      retry_count: 0,
+                      max_retries: 2,
+                      last_error: nil,
+                      created_at: now,
+                      updated_at: now
+                    }
+
+                    :ets.insert(table, {id, task})
+
+                    case Regex.run(~r/task_(\d+)/, id) do
+                      [_, n] -> max(max_counter, String.to_integer(n))
+                      _ -> max_counter
+                    end
+                  else
+                    max_counter
+                  end
+                _ -> max_counter
+              end
+            _ -> max_counter
+          end
+        rescue
+          _ -> max_counter
+        end
+      end)
+    else
+      counter
+    end
+  end
+
+  defp parse_frontmatter_simple(text) do
+    text
+    |> String.split("\n")
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, ": ", parts: 2) do
+        [key, value] ->
+          value = value |> String.trim() |> String.trim("\"")
+          if value == "" or value == "null", do: acc, else: Map.put(acc, String.trim(key), value)
+        _ -> acc
+      end
+    end)
   end
 
   @impl true
