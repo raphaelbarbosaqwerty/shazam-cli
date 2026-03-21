@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.3 (2026-03-21)
+
+### Features
+- **AGENT_QUERY re-execution** — when agent output contains queries, system resolves answers and re-executes the agent with them. Agent now actually receives and uses the answers.
+- **Workspace enforcement** — agents with a workspace receive a CRITICAL prompt restricting all file operations to their workspace directory. Prevents cross-repo file creation.
+- **Orphan process cleanup** — on exit, Shazam kills all child processes (Claude, Codex, Cursor) recursively. No more orphan CLI processes running after shutdown.
+
+### Bug Fixes
+- **Domain restriction prompt** — now checks both `"allowed_paths"` and `"paths"` keys (YAML uses `"paths"`)
+
 ## v0.9.2 (2026-03-21)
 
 ### Changes
