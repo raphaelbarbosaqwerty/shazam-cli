@@ -87,7 +87,7 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
   def format_org_tree(agents) do
     agents
-    |> Enum.map(fn a -> "#{a[:name]} (#{a[:role]})" end)
+    |> Enum.map(fn a -> "#{safe_field(a, :name, "?")} (#{safe_field(a, :role, "")})" end)
     |> Enum.join(" → ")
   end
 
@@ -189,14 +189,30 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   def find_pm_name(state) do
     agents = deep_get(state, [:company, :agents]) ||
              deep_get(state, [:company, :config, :agents]) || []
+    # Find the top of hierarchy: first agent without a supervisor (Engineering Manager or PM)
     case Enum.find(agents, fn a ->
-      role = String.downcase(a[:role] || "")
-      String.contains?(role, "manager") or String.contains?(role, "pm")
+      role = String.downcase(to_string(safe_field(a, :role, "")))
+      supervisor = safe_field(a, :supervisor, nil)
+      (String.contains?(role, "manager") or String.contains?(role, "pm")) and supervisor == nil
     end) do
-      nil -> Enum.at(agents, 0, %{})[:name] || "pm"
-      agent -> agent[:name]
+      nil ->
+        # Fallback: any agent with "manager" or "pm" in role
+        case Enum.find(agents, fn a ->
+          role = String.downcase(to_string(safe_field(a, :role, "")))
+          String.contains?(role, "manager") or String.contains?(role, "pm")
+        end) do
+          nil -> safe_field(Enum.at(agents, 0, %{}), :name, "pm")
+          agent -> safe_field(agent, :name, "pm")
+        end
+      agent -> safe_field(agent, :name, "pm")
     end
   end
+
+  # Safe field access for both structs and maps
+  defp safe_field(nil, _key, default), do: default
+  defp safe_field(item, key, default) when is_struct(item), do: Map.get(item, key, default)
+  defp safe_field(item, key, default) when is_map(item), do: item[key] || Map.get(item, key, default)
+  defp safe_field(_, _key, default), do: default
 
   def list_tasks(state) do
     company_name = deep_get(state, [:company, :name])
