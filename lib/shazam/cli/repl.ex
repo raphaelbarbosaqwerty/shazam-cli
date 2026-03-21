@@ -33,10 +33,7 @@ defmodule Shazam.CLI.Repl do
 
     Application.ensure_all_started(:shazam)
 
-    # Fresh start: reset metrics and sync task files
-    clear_previous_session(company_name)
-
-    # Set workspace
+    # Set workspace FIRST (before sync, so task files are found)
     workspace = config[:workspace] || File.cwd!()
     Application.put_env(:shazam, :workspace, workspace)
     Shazam.Store.save("workspace", %{"path" => workspace})
@@ -45,6 +42,9 @@ defmodule Shazam.CLI.Repl do
     if config[:workspaces] do
       Application.put_env(:shazam, :workspaces, config.workspaces)
     end
+
+    # Fresh start: reset metrics and sync task files (AFTER workspace is set)
+    clear_previous_session(company_name)
 
     # Set tech_stack if present in config
     if config[:tech_stack], do: Application.put_env(:shazam, :tech_stack, config.tech_stack)
