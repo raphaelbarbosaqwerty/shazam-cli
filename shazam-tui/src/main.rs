@@ -383,10 +383,19 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                         return;
                     }
                     KeyCode::Char('d') if state.view == View::Tasks => {
-                        // 'd' also opens detail view
+                        // 'd' opens detail view
                         if !state.task_items.is_empty() {
                             state.view = View::TaskDetail;
                             state.task_detail_scroll = 0;
+                        }
+                        return;
+                    }
+                    KeyCode::Delete | KeyCode::Backspace if state.view == View::Tasks => {
+                        // Delete/Backspace removes selected task
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/delete-task {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
                         }
                         return;
                     }
@@ -553,14 +562,19 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                 let token = format!("[Image #{}]", id);
                 state.input.push_str(&token);
                 state.cursor_pos = state.input.len();
-            } else if content.contains('\n') {
+            } else if content.contains('\n') || content.len() > 100 {
                 let line_count = content.lines().count();
+                let char_count = content.chars().count();
                 let id = state.add_paste(content.clone());
                 send_to_elixir(&OutboundMsg::Paste(PasteMsg {
                     content: content.clone(),
                     line_count,
                 }));
-                let token = format!("[Pasted text #{} +{} lines]", id, line_count);
+                let token = if line_count > 1 {
+                    format!("[Paste #{} — {} lines]", id, line_count)
+                } else {
+                    format!("[Paste #{} — {} chars]", id, char_count)
+                };
                 state.input.push_str(&token);
                 state.cursor_pos = state.input.len();
             } else {

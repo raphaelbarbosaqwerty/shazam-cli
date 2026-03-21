@@ -122,6 +122,11 @@ defmodule Shazam.TaskBoard do
     GenServer.call(__MODULE__, {:restore, task_id}, @call_timeout)
   end
 
+  @doc "Import a task with a specific ID (for restoring from disk)."
+  def import_task(task) do
+    GenServer.call(__MODULE__, {:import_task, task}, @call_timeout)
+  end
+
   @doc "Clears all tasks from the board."
   def clear_all do
     GenServer.call(__MODULE__, :clear_all, @call_timeout)
@@ -433,6 +438,19 @@ defmodule Shazam.TaskBoard do
       [] ->
         {:reply, {:error, :not_found}, state}
     end
+  end
+
+  def handle_call({:import_task, task}, _from, state) do
+    id = task[:id] || task.id
+    :ets.insert(state.table, {id, task})
+
+    # Update counter to be at least as high as this task's number
+    counter = case Regex.run(~r/task_(\d+)/, id) do
+      [_, n] -> max(state.counter, String.to_integer(n))
+      _ -> state.counter
+    end
+
+    {:reply, {:ok, task}, %{state | counter: counter}}
   end
 
   def handle_call(:clear_all, _from, state) do

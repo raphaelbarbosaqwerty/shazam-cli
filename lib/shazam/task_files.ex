@@ -121,16 +121,33 @@ defmodule Shazam.TaskFiles do
             _ -> :pending
           end
 
-          # Skip completed/failed/deleted tasks — they're history
-          if status in [:pending, :in_progress, :awaiting_approval] do
-            Shazam.TaskBoard.create(%{
-              title: task_map.title,
-              status: status,
-              assigned_to: task_map[:assigned_to],
-              created_by: task_map[:created_by],
-              company: task_map[:company],
-              description: task_map[:description]
-            })
+          # Reset in_progress → pending (interrupted during shutdown)
+          status = if status == :in_progress, do: :pending, else: status
+
+          now = DateTime.utc_now()
+          task = %{
+            id: task_map.id,
+            title: task_map.title,
+            description: task_map[:description],
+            status: status,
+            assigned_to: task_map[:assigned_to],
+            created_by: task_map[:created_by],
+            company: task_map[:company],
+            result: task_map[:result],
+            parent_task_id: task_map[:parent_task_id],
+            depends_on: task_map[:depends_on],
+            attachments: task_map[:attachments] || [],
+            retry_count: task_map[:retry_count] || 0,
+            max_retries: task_map[:max_retries] || 2,
+            last_error: nil,
+            created_at: task_map[:created_at] || now,
+            updated_at: task_map[:updated_at] || now
+          }
+
+          try do
+            Shazam.TaskBoard.import_task(task)
+          catch
+            _, _ -> :ok
           end
         end
       end)
