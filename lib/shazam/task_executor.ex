@@ -48,12 +48,9 @@ defmodule Shazam.TaskExecutor do
       _, _ -> ""
     end
 
-    system_prompt = base_prompt <> impl_prompt <> role_rules_prompt <> tech_stack_prompt <> skills_prompt <> modules_prompt <> memory_prompt <> pm_prompt <> designer_prompt <> analyst_prompt <> domain_restriction_prompt <> agent_query_prompt
-
-    # Check if agent has a specific workspace
+    # Check if agent has a specific workspace (resolve early for prompt)
     agent_workspace = Map.get(agent_profile, :workspace, nil)
     workspace = if agent_workspace do
-      # Look up in workspaces config
       workspaces = Application.get_env(:shazam, :workspaces, %{})
       case Map.get(workspaces, agent_workspace) do
         %{path: path} when is_binary(path) -> path
@@ -62,6 +59,28 @@ defmodule Shazam.TaskExecutor do
     else
       Application.get_env(:shazam, :workspace, nil)
     end
+    # Build workspace enforcement prompt
+    workspace_prompt = if agent_workspace && workspace do
+      """
+
+      ## CRITICAL: Workspace Restriction
+      You are working EXCLUSIVELY in this repository: #{workspace}
+      Workspace name: #{agent_workspace}
+
+      RULES:
+      - ALL files you create, edit, or delete MUST be inside #{workspace}
+      - Do NOT create files in any parent directory or sibling repository
+      - Do NOT reference or modify files outside your workspace
+      - Your current working directory (cwd) is set to #{workspace}
+      - Use RELATIVE paths from your workspace root, not absolute paths
+      - If a task requires changes outside your workspace, report it and do NOT proceed
+      """
+    else
+      ""
+    end
+
+    system_prompt = base_prompt <> impl_prompt <> role_rules_prompt <> tech_stack_prompt <> skills_prompt <> modules_prompt <> memory_prompt <> pm_prompt <> designer_prompt <> analyst_prompt <> domain_restriction_prompt <> agent_query_prompt <> workspace_prompt
+
     modules = agent_profile.modules || []
 
     module_dirs =

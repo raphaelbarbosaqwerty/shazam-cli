@@ -316,17 +316,22 @@ defmodule Shazam.TaskExecutor.PromptBuilder do
       try do
         domain_config = Shazam.Company.get_domain_config(company_name)
         case Map.get(domain_config, domain) do
-          %{"allowed_paths" => paths} when is_list(paths) and paths != [] ->
-            """
+          config when is_map(config) ->
+            paths = config["allowed_paths"] || config["paths"] || []
+            if is_list(paths) and paths != [] do
+              """
 
-            ## IMPORTANT: Path Restriction
-            Your team (#{domain}) is restricted to the following directories:
-            #{Enum.map_join(paths, "\n", fn p -> "- `#{p}`" end)}
+              ## IMPORTANT: Path Restriction
+              Your team (#{domain}) is restricted to the following directories:
+              #{Enum.map_join(paths, "\n", fn p -> "- `#{p}`" end)}
 
-            You MUST NOT create, edit, or delete files outside of these directories.
-            If a task requires changes outside your allowed paths, report this in your output
-            and do NOT proceed with those changes.
-            """
+              You MUST NOT create, edit, or delete files outside of these directories.
+              If a task requires changes outside your allowed paths, report this in your output
+              and do NOT proceed with those changes.
+              """
+            else
+              ""
+            end
           _ ->
             ""
         end
