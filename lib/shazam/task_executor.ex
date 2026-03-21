@@ -143,11 +143,41 @@ defmodule Shazam.TaskExecutor do
         cwd: workspace
       )
 
-      # Resolve agent-to-agent queries in output
+      # Resolve agent-to-agent queries — if output contains queries,
+      # re-execute ONCE with the answers injected into the prompt
       result = case result do
         {:ok, text, files} ->
-          {resolved, _count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
-          {:ok, resolved, files}
+          {resolved, query_count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
+          if query_count > 0 do
+            # Re-execute with query answers as context
+            followup_prompt = """
+            You previously asked #{query_count} question(s) to other agents. Here are their answers:
+
+            #{resolved}
+
+            Now continue with your original task using this information.
+            Original task: #{task.title}
+            #{if task.description, do: "\nDetails: #{task.description}", else: ""}
+            """
+
+            Shazam.API.EventBus.broadcast(%{
+              event: "agent_output", agent: agent_profile.name,
+              type: "text", content: "Re-executing with #{query_count} query answer(s)..."
+            })
+
+            case provider_mod.execute(:stateless, followup_prompt,
+              agent_name: agent_profile.name,
+              system_prompt: system_prompt,
+              model: model,
+              timeout: @task_timeout,
+              cwd: workspace
+            ) do
+              {:ok, text2, files2} -> {:ok, text2, Enum.uniq(files ++ files2)}
+              other -> other
+            end
+          else
+            {:ok, resolved, files}
+          end
         other -> other
       end
 
@@ -202,11 +232,33 @@ defmodule Shazam.TaskExecutor do
 
         result = Orchestrator.execute_on_session(session_pid, agent_profile.name, prompt)
 
-        # Resolve agent-to-agent queries in output
+        # Resolve agent-to-agent queries — re-execute with answers if queries found
         result = case result do
           {:ok, text, files} ->
-            {resolved, _count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
-            {:ok, resolved, files}
+            {resolved, query_count} = Shazam.AgentQuery.resolve_queries(text, agent_profile.name)
+            if query_count > 0 do
+              followup = """
+              You previously asked #{query_count} question(s) to other agents. Here are their answers:
+
+              #{resolved}
+
+              Now continue with your original task using this information.
+              Original task: #{task.title}
+              #{if task.description, do: "\nDetails: #{task.description}", else: ""}
+              """
+
+              Shazam.API.EventBus.broadcast(%{
+                event: "agent_output", agent: agent_profile.name,
+                type: "text", content: "Re-executing with #{query_count} query answer(s)..."
+              })
+
+              case Orchestrator.execute_on_session(session_pid, agent_profile.name, followup) do
+                {:ok, text2, files2} -> {:ok, text2, Enum.uniq(files ++ files2)}
+                other -> other
+              end
+            else
+              {:ok, resolved, files}
+            end
           other -> other
         end
 
