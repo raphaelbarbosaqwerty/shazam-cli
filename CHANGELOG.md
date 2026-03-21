@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.2 (2026-03-21)
+
+### Changes
+- **Remove SQLite** — deleted Exqlite dependency and Repo module. Store now uses JSON files only (~/.shazam/)
+- **AgentWorker implements Access** — `agent[:name]` works on structs permanently (no more UndefinedFunctionError)
+- **Task counter isolation** — each workspace starts from task_1, no cross-project counter inflation
+- **find_pm_name fixed** — correctly finds top of hierarchy (Engineering Manager or PM)
+
 ## v0.9.1 (2026-03-21)
 
 ### Features
