@@ -88,7 +88,16 @@ defmodule Shazam.CLI.Repl do
       end
     end
 
-    # Restore tasks from .shazam/tasks/ markdown files
+    # Clear TaskBoard from previous projects and reset counter
+    if Code.ensure_loaded?(Shazam.TaskBoard) do
+      try do
+        Shazam.TaskBoard.clear_all()
+      catch
+        _, _ -> :ok
+      end
+    end
+
+    # Restore tasks from .shazam/tasks/ markdown files (current workspace only)
     try do
       Shazam.TaskFiles.sync_from_files()
     catch
