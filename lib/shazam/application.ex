@@ -38,6 +38,9 @@ defmodule Shazam.Application do
       # Context persistence — cross-provider context continuity
       Shazam.ContextManager,
 
+      # Circuit Breaker — auto-pauses on consecutive failures
+      Shazam.CircuitBreaker,
+
       # Plugin Manager — loads .shazam/plugins/*.ex at runtime
       Shazam.PluginManager,
 

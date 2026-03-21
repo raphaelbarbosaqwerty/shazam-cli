@@ -95,6 +95,9 @@ You (CEO) ──> describe task in natural language
 | **Task detail view** | Press Enter on any task to see full result with markdown formatting |
 | **Inline task actions** | `a`/`r`/`p`/`x` keybindings for approve/reject/pause/kill in task overlay |
 | **Enhanced status bar** | Sparklines, cost, git branch, provider — all in one glance |
+| **Circuit breaker** | Auto-pauses after 3 consecutive failures — prevents runaway token spend |
+| **Health check** | `/health` shows agents, stalls, circuit breaker, memory, disk |
+| **Task deduplication** | Prevents duplicate tasks from PM creating the same subtask twice |
 
 ---
 
@@ -939,6 +942,7 @@ export CODEX_CLI_BIN="codex"
 | `Shazam.GitContext` | `git_context.ex` | Git-awareness — branch, status, commits injected into prompts |
 | `Shazam.AgentQuery` | `agent_query.ex` | Agent-to-agent knowledge sharing (passive context lookup) |
 | `Shazam.AgentPulse` | `agent_pulse.ex` | Real-time activity sparkline with stall detection |
+| `Shazam.CircuitBreaker` | `circuit_breaker.ex` | Auto-pause after consecutive failures |
 | `Shazam.ProjectDetector` | `project_detector.ex` | Auto-detect tech stack, frameworks, domains from project files |
 
 ### Provider System

@@ -29,6 +29,7 @@ defmodule Shazam.RalphLoop do
     poll_interval: @poll_interval,
     auto_retry: true,     # automatically retry failed tasks with backoff
     max_retries: 2,       # default max retry attempts per task
+    memory_warn_mb: 500,  # memory warning threshold in MB
     status: :idle
   ]
 
@@ -236,6 +237,8 @@ defmodule Shazam.RalphLoop do
         {:reply, :ok, %{state | auto_retry: value}}
       "max_retries" when is_integer(value) and value >= 0 ->
         {:reply, :ok, %{state | max_retries: value}}
+      "memory_warn_mb" when is_integer(value) and value > 0 ->
+        {:reply, :ok, %{state | memory_warn_mb: value}}
       _ ->
         {:reply, {:error, :invalid_config}, state}
     end
@@ -263,7 +266,53 @@ defmodule Shazam.RalphLoop do
   end
 
   def handle_info(:poll, state) do
+    # Resource check — warn if memory is critical
+    memory_mb = div(:erlang.memory(:total), 1_048_576)
+    if memory_mb > state.memory_warn_mb do
+      Logger.warning("[RalphLoop] Memory critical: #{memory_mb}MB — threshold: #{state.memory_warn_mb}MB")
+      Shazam.API.EventBus.broadcast(%{event: "resource_alert", type: "memory", value: memory_mb})
+    end
+
+    # Disk space check for .shazam directory
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    shazam_dir = Path.join(workspace, ".shazam")
+    try do
+      case System.cmd("df", ["-k", shazam_dir], stderr_to_stdout: true) do
+        {output, 0} ->
+          lines = String.split(output, "\n") |> Enum.drop(1) |> Enum.reject(&(&1 == ""))
+          case lines do
+            [line | _] ->
+              parts = String.split(line)
+              # df -k output: Filesystem 1K-blocks Used Available Use% Mounted
+              capacity_str = Enum.find(parts, fn p -> String.ends_with?(p, "%") end)
+              if capacity_str do
+                {pct, _} = Integer.parse(String.trim_trailing(capacity_str, "%"))
+                if pct > 95 do
+                  Logger.warning("[RalphLoop] Disk space critical: #{pct}% used")
+                  Shazam.API.EventBus.broadcast(%{event: "resource_alert", type: "disk", value: pct})
+                end
+              end
+            _ -> :ok
+          end
+        _ -> :ok
+      end
+    catch
+      _, _ -> :ok
+    end
+
     state = maybe_pick_tasks(state)
+
+    # Check for stalled agents
+    Enum.each(state.running, fn {task_id, info} ->
+      if Shazam.AgentPulse.stalled?(info.agent_name) do
+        Shazam.API.EventBus.broadcast(%{
+          event: "agent_stalled",
+          agent: info.agent_name,
+          task_id: task_id
+        })
+      end
+    end)
+
     schedule_poll(state.poll_interval)
     {:noreply, state}
   end
@@ -290,6 +339,7 @@ defmodule Shazam.RalphLoop do
             end
 
             TaskBoard.complete(task_id, output)
+            Shazam.CircuitBreaker.record_success()
             Logger.info("[RalphLoop:#{state.company_name}] Task #{task_id} completed by #{info.agent_name}")
             Shazam.FileLogger.info("Task #{task_id} completed by #{info.agent_name}")
             Shazam.Metrics.record_completion(info.agent_name, duration_ms)
@@ -325,6 +375,7 @@ defmodule Shazam.RalphLoop do
             end
 
             TaskBoard.complete(task_id, output)
+            Shazam.CircuitBreaker.record_success()
             Logger.info("[RalphLoop:#{state.company_name}] Task #{task_id} completed by #{info.agent_name}")
             Shazam.FileLogger.info("Task #{task_id} completed by #{info.agent_name}")
             Shazam.Metrics.record_completion(info.agent_name, duration_ms)
@@ -350,6 +401,7 @@ defmodule Shazam.RalphLoop do
 
           {:error, reason} ->
             Shazam.Metrics.record_failure(info.agent_name)
+            Shazam.CircuitBreaker.record_failure(reason)
             Shazam.FileLogger.warn("Task #{task_id} failed: #{inspect(reason, limit: 200)}")
             maybe_auto_retry(task_id, reason, info.agent_name, state)
         end
@@ -371,6 +423,7 @@ defmodule Shazam.RalphLoop do
         else
           Logger.error("[RalphLoop:#{state.company_name}] Task #{task_id} died: #{inspect(reason)}")
           Shazam.Metrics.record_failure(info.agent_name)
+          Shazam.CircuitBreaker.record_failure({:process_died, reason})
           maybe_auto_retry(task_id, {:process_died, reason}, info.agent_name, state)
         end
         {:noreply, %{state | running: Map.delete(state.running, task_id)}}
@@ -388,6 +441,10 @@ defmodule Shazam.RalphLoop do
   # --- Main logic ---
 
   defp maybe_pick_tasks(state) do
+    # Skip picking tasks if circuit breaker is tripped
+    if Shazam.CircuitBreaker.tripped?() do
+      state
+    else
     available_slots = state.max_concurrent - map_size(state.running)
 
     if available_slots <= 0 do
@@ -409,6 +466,7 @@ defmodule Shazam.RalphLoop do
       locked = if state.module_lock, do: TaskScheduler.locked_module_paths(state.running, state.company_name), else: %{}
 
       TaskScheduler.pick_tasks(candidates, state, locked, available_slots, &execute_task/2)
+    end
     end
   end
 

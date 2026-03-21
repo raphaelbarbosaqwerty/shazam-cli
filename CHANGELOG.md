@@ -23,6 +23,12 @@
   - Domains restrict where agents can edit files
   - Manager auto-delegates to the right PM based on task context
 
+- **Circuit Breaker** — auto-pauses RalphLoop after 3 consecutive task failures
+  - Broadcasts warning event, logs to FileLogger
+  - `/health` shows circuit breaker status, manually reset with `/resume`
+- **Health Check (`/health`)** — shows running agents, stall detection, circuit breaker, memory, disk
+- **Graceful Degradation** — warns when memory >500MB or disk >95%, configurable threshold
+- **Task Deduplication** — prevents duplicate tasks (same title + agent + company in pending/in_progress)
 - **`/retry-all`** — retry all failed tasks in one command
 - **JSON logger plugin** — example plugin that saves structured event logs to `.shazam/logs/events.json`
 

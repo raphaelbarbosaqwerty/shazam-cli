@@ -160,39 +160,55 @@ defmodule Shazam.TaskBoard do
         {:reply, {:error, {:plugin_halted, reason}}, state}
 
       {:ok, attrs} ->
-        id = "task_#{state.counter + 1}"
-        now = DateTime.utc_now()
+        # Deduplication check — skip if identical task already exists
+        title = attrs[:title] || "Untitled"
+        existing = :ets.tab2list(state.table)
+          |> Enum.find(fn {_id, t} ->
+            t.title == title and
+            t.assigned_to == attrs[:assigned_to] and
+            t.status in [:pending, :in_progress] and
+            Map.get(t, :company) == attrs[:company]
+          end)
 
-        task = %{
-          id: id,
-          title: attrs[:title] || "Untitled",
-          description: attrs[:description],
-          status: :pending,
-          assigned_to: attrs[:assigned_to],
-          created_by: attrs[:created_by],
-          parent_task_id: attrs[:parent_task_id],
-          depends_on: attrs[:depends_on],
-          company: attrs[:company],
-          result: nil,
-          attachments: attrs[:attachments] || [],
-          retry_count: attrs[:retry_count] || 0,
-          max_retries: attrs[:max_retries] || 2,
-          last_error: nil,
-          created_at: now,
-          updated_at: now
-        }
+        if existing do
+          {_id, dup_task} = existing
+          Logger.info("[TaskBoard] Duplicate task skipped: #{dup_task.id} - #{dup_task.title}")
+          {:reply, {:ok, dup_task}, state}
+        else
+          id = "task_#{state.counter + 1}"
+          now = DateTime.utc_now()
 
-        :ets.insert(state.table, {id, task})
-        Logger.info("[TaskBoard] Task created: #{id} - #{task.title}")
-        broadcast(:task_created, task)
-        spawn(fn -> Shazam.TaskFiles.write_task(task) end)
+          task = %{
+            id: id,
+            title: title,
+            description: attrs[:description],
+            status: :pending,
+            assigned_to: attrs[:assigned_to],
+            created_by: attrs[:created_by],
+            parent_task_id: attrs[:parent_task_id],
+            depends_on: attrs[:depends_on],
+            company: attrs[:company],
+            result: nil,
+            attachments: attrs[:attachments] || [],
+            retry_count: attrs[:retry_count] || 0,
+            max_retries: attrs[:max_retries] || 2,
+            last_error: nil,
+            created_at: now,
+            updated_at: now
+          }
 
-        # Plugin hook: after_task_create (can observe/mutate)
-        spawn(fn ->
-          Shazam.PluginManager.run_pipeline(:after_task_create, task, company_name: task.company)
-        end)
+          :ets.insert(state.table, {id, task})
+          Logger.info("[TaskBoard] Task created: #{id} - #{task.title}")
+          broadcast(:task_created, task)
+          spawn(fn -> Shazam.TaskFiles.write_task(task) end)
 
-        {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
+          # Plugin hook: after_task_create (can observe/mutate)
+          spawn(fn ->
+            Shazam.PluginManager.run_pipeline(:after_task_create, task, company_name: task.company)
+          end)
+
+          {:reply, {:ok, task}, %{state | counter: state.counter + 1} |> schedule_save()}
+        end
     end
   end
 

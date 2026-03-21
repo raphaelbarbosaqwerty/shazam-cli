@@ -55,6 +55,7 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       "/search <query>     — Search tasks by title",
       "/export [filename]  — Export tasks to markdown",
       "/workspaces         — List configured workspaces (multi-repo)",
+      "/health             — Health check (agents, stalls, circuit breaker)",
       "/memory             — Show memory usage breakdown",
       "/clear              — Clear scroll region",
       "/help               — Show this help",
@@ -358,6 +359,121 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       Helpers.send_event(state.port, "system", "info", "")
       Helpers.send_event(state.port, "system", "info", "Available events: on_init, before_task_create, after_task_create, before_task_complete, after_task_complete, before_query, after_query, on_tool_use")
     end
+    state
+  end
+
+  def handle_command("/health", state) do
+    lines = []
+
+    # Running agents with last activity time
+    company_name = Helpers.deep_get(state, [:company, :name]) || ""
+    running_info = if Code.ensure_loaded?(Shazam.RalphLoop) and Shazam.RalphLoop.exists?(company_name) do
+      try do
+        case Shazam.RalphLoop.status(company_name) do
+          %{running_tasks: tasks} when is_list(tasks) -> tasks
+          _ -> []
+        end
+      catch
+        _, _ -> []
+      end
+    else
+      []
+    end
+
+    lines = lines ++ ["Health Check", ""]
+
+    # Running agents
+    lines = lines ++ ["Running Agents:"]
+    lines = if running_info == [] do
+      lines ++ ["  (none)"]
+    else
+      Enum.reduce(running_info, lines, fn task_info, acc ->
+        agent = task_info[:agent] || task_info.agent
+        started = task_info[:started_at] || task_info.started_at
+        elapsed = DateTime.diff(DateTime.utc_now(), started, :second)
+        stalled = try do
+          Shazam.AgentPulse.stalled?(agent)
+        catch
+          _, _ -> false
+        end
+        stall_marker = if stalled, do: " [STALLED]", else: ""
+        acc ++ ["  #{agent}: running #{elapsed}s#{stall_marker}"]
+      end)
+    end
+
+    # Stalled agents (>30s no activity)
+    stalled_agents = Enum.filter(running_info, fn task_info ->
+      agent = task_info[:agent] || task_info.agent
+      try do
+        Shazam.AgentPulse.stalled?(agent)
+      catch
+        _, _ -> false
+      end
+    end)
+
+    lines = lines ++ ["", "Stalled Agents (>30s no activity):"]
+    lines = if stalled_agents == [] do
+      lines ++ ["  (none)"]
+    else
+      Enum.reduce(stalled_agents, lines, fn task_info, acc ->
+        agent = task_info[:agent] || task_info.agent
+        acc ++ ["  #{agent}"]
+      end)
+    end
+
+    # Circuit breaker status
+    cb_status = try do
+      Shazam.CircuitBreaker.status()
+    catch
+      _, _ -> %{consecutive_failures: 0, tripped: false, last_error: nil, threshold: 3}
+    end
+
+    cb_state = if cb_status.tripped, do: "TRIPPED", else: "OK"
+    lines = lines ++ [
+      "",
+      "Circuit Breaker: #{cb_state}",
+      "  Consecutive failures: #{cb_status.consecutive_failures}/#{cb_status.threshold}"
+    ]
+    if cb_status.last_error do
+      lines = lines ++ ["  Last error: #{inspect(cb_status.last_error, limit: 100)}"]
+      _ = lines
+    end
+
+    # Memory usage
+    mem = :erlang.memory()
+    total_mb = div(mem[:total], 1_048_576)
+    lines = lines ++ [
+      "",
+      "Resources:",
+      "  BEAM Memory: #{total_mb} MB",
+      "  Processes: #{:erlang.system_info(:process_count)}"
+    ]
+
+    # Disk usage for .shazam directory
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    shazam_dir = Path.join(workspace, ".shazam")
+    disk_info = try do
+      case System.cmd("df", ["-h", shazam_dir], stderr_to_stdout: true) do
+        {output, 0} ->
+          df_lines = String.split(output, "\n") |> Enum.drop(1) |> Enum.reject(&(&1 == ""))
+          case df_lines do
+            [line | _] ->
+              parts = String.split(line)
+              capacity = Enum.find(parts, fn p -> String.ends_with?(p, "%") end) || "?"
+              avail = Enum.at(parts, 3) || "?"
+              "#{capacity} used, #{avail} available"
+            _ -> "unknown"
+          end
+        _ -> "unknown"
+      end
+    catch
+      _, _ -> "unknown"
+    end
+    lines = lines ++ ["  Disk (.shazam): #{disk_info}"]
+
+    Enum.each(lines, fn line ->
+      Helpers.send_event(state.port, "system", "info", line)
+    end)
     state
   end
 
