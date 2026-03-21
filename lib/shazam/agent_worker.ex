@@ -18,7 +18,7 @@ defmodule Shazam.AgentWorker do
     tools: [],
     skills: [],
     modules: [],
-    budget: 100_000,
+    budget: nil,              # nil = unlimited
     tokens_used: 0,
     heartbeat_interval: 60_000,
     status: :idle,
