@@ -147,6 +147,7 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
         rc = config[:ralph_config] || %{}
         if rc[:auto_approve], do: Shazam.RalphLoop.set_auto_approve(company_name, true)
         if rc[:max_concurrent], do: Shazam.RalphLoop.set_config(company_name, "max_concurrent", rc[:max_concurrent])
+        if rc[:qa_auto], do: Application.put_env(:shazam, :qa_auto, true)
         # Apply ContextManager config
         Shazam.ContextManager.configure(
           context_history: rc[:context_history] || 5,

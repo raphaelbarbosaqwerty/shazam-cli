@@ -379,14 +379,25 @@ defmodule Shazam.TaskExecutor.PromptBuilder do
     tech_stack = Application.get_env(:shazam, :tech_stack, nil)
 
     if tech_stack && is_map(tech_stack) && map_size(tech_stack) > 0 do
-      lines =
-        tech_stack
-        |> Enum.map(fn {key, value} -> "- **#{key}**: #{value}" end)
-        |> Enum.join("\n")
-
+      lines = format_tech_stack(tech_stack, 0)
       "\n\n## Project Tech Stack\n#{lines}\n"
     else
       ""
     end
   end
+
+  defp format_tech_stack(map, depth) when is_map(map) do
+    indent = String.duplicate("  ", depth)
+    map
+    |> Enum.map(fn {key, value} ->
+      case value do
+        v when is_map(v) ->
+          "#{indent}- **#{key}**:\n#{format_tech_stack(v, depth + 1)}"
+        v ->
+          "#{indent}- **#{key}**: #{v}"
+      end
+    end)
+    |> Enum.join("\n")
+  end
+  defp format_tech_stack(value, _depth), do: to_string(value)
 end

@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.9.1 (2026-03-21)
+
+### Features
+- **Engineering Manager role** — hierarchical multi-team orchestration
+  - Manager sits above PMs, receives all tasks, delegates to the correct PM/team
+  - Only needed with multiple teams; single-team projects use PM directly
+  - Example: `manager → pm_dashboard + pm_vscode`, each PM coordinates their own devs
+
+- **Nested tech_stack** — workspace-aware tech stack in YAML
+  - `tech_stack:` now supports sub-maps per workspace (e.g., `dashboard:` and `vscode:`)
+  - Renders formatted in agent prompts with proper indentation
+  - `to_yaml` serializes nested maps correctly
+
+- **Multi-team workspace pattern** — documented architecture for multi-repo teams
+  ```
+  CEO (you) → Engineering Manager
+    ├── PM Dashboard → 3 frontend devs (workspace: dashboard)
+    └── PM VS Code   → 3 extension devs (workspace: vscode)
+  ```
+  - Each team has its own PM, domain, workspace, and developers
+  - Domains restrict where agents can edit files
+  - Manager auto-delegates to the right PM based on task context
+
+- **`/retry-all`** — retry all failed tasks in one command
+- **JSON logger plugin** — example plugin that saves structured event logs to `.shazam/logs/events.json`
+
+### Bug Fixes
+- **`/tasks --clear` now clears ALL tasks** — previously only cleared active tasks, preserved completed/failed
+- **QA auto-generation fixed** — `qa_auto` from YAML was parsed but never applied to Application env on `/start`
+- **Plan workspace context** — plans now include workspace/repository info in the PM prompt, preventing agents from losing track of which repo tasks belong to
+- **Memory display includes child processes** — `Mem:` now sums BEAM + Claude/Codex/Cursor subprocess memory (was only showing BEAM memory)
+- **Version display** — `shazam --version` now reads from mix.exs, not hardcoded
+- **release.yml** — binary renamed from `shazam` to `shazam-cli`
+- **Elixir requirement** — mix.exs requires `~> 1.18` (claude_code dependency)
+- **shazam update crash** — `git fetch --tags --force` fixes tag conflicts
+
 ## v0.9.0 (2026-03-21)
 
 ### Features

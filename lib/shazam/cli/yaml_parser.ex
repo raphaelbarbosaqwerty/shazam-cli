@@ -288,15 +288,7 @@ defmodule Shazam.CLI.YamlParser do
     end
 
     tech_stack_section = if config[:tech_stack] && map_size(config.tech_stack) > 0 do
-      lines = config.tech_stack
-        |> Enum.map(fn {key, value} ->
-          if is_binary(value) and String.contains?(value, "\n") do
-            "  #{key}: |\n#{value |> String.split("\n") |> Enum.map_join("\n", &"    #{&1}")}"
-          else
-            "  #{key}: #{quote_str(to_string(value))}"
-          end
-        end)
-        |> Enum.join("\n")
+      lines = yaml_serialize_map(config.tech_stack, 1)
       "\n# Tech stack — shared with all agents as project context\ntech_stack:\n#{lines}\n"
     else
       "\n# Tech stack — shared with all agents as project context\n# tech_stack:\n#   language: Elixir\n#   framework: Phoenix\n#   database: PostgreSQL\n#   frontend: Flutter\n#   notes: |\n#     Additional context about the project stack\n"
@@ -333,6 +325,26 @@ defmodule Shazam.CLI.YamlParser do
     end
   end
   defp quote_str(s), do: to_string(s)
+
+  defp yaml_serialize_map(map, depth) when is_map(map) do
+    indent = String.duplicate("  ", depth)
+    map
+    |> Enum.map(fn {key, value} ->
+      case value do
+        v when is_map(v) ->
+          "#{indent}#{key}:\n#{yaml_serialize_map(v, depth + 1)}"
+        v when is_binary(v) ->
+          if String.contains?(v, "\n") do
+            "#{indent}#{key}: |\n#{v |> String.split("\n") |> Enum.map_join("\n", &"#{indent}  #{&1}")}"
+          else
+            "#{indent}#{key}: #{quote_str(v)}"
+          end
+        v ->
+          "#{indent}#{key}: #{quote_str(to_string(v))}"
+      end
+    end)
+    |> Enum.join("\n")
+  end
 
   defp default_yaml do
     if File.exists?(".shazam/shazam.yaml"), do: ".shazam/shazam.yaml", else: "shazam.yaml"

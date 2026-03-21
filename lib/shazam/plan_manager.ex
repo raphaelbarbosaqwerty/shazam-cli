@@ -106,11 +106,13 @@ defmodule Shazam.PlanManager do
 
   @doc "Build a prompt for the PM to create a plan."
   def build_plan_prompt(description) do
+    workspace_context = build_workspace_context()
+
     """
     Create a detailed execution plan for the following request:
 
     #{description}
-
+    #{workspace_context}
     Analyze the codebase first to understand the current state, then create a phased plan.
 
     IMPORTANT: Output your plan as a JSON block in this exact format:
@@ -151,6 +153,9 @@ defmodule Shazam.PlanManager do
     - Tasks that depend on previous phase tasks MUST have depends_on set
     - Be specific in descriptions — include file paths, function names, acceptance criteria
     - Assign tasks based on agent roles (devs implement, QA tests, PM coordinates)
+    - When multiple workspaces/repositories exist, be EXPLICIT about which workspace each task belongs to
+    - Include the full file path relative to the workspace root in task descriptions
+    - Assign agents that have the matching workspace configured
     """
   end
 
@@ -273,6 +278,28 @@ defmodule Shazam.PlanManager do
       end
     end)
     |> elem(1)
+  end
+
+  defp build_workspace_context do
+    workspaces = Application.get_env(:shazam, :workspaces, %{})
+    if workspaces == nil or workspaces == %{} do
+      ""
+    else
+      lines = workspaces
+        |> Enum.map(fn {name, config} ->
+          path = if is_map(config), do: config[:path] || config["path"] || Map.get(config, :path, ""), else: ""
+          "  - #{name}: #{path}"
+        end)
+        |> Enum.join("\n")
+
+      """
+
+      WORKSPACES/REPOSITORIES available:
+      #{lines}
+
+      Each agent is assigned to a specific workspace. When creating tasks, be explicit about WHICH workspace/repository the task applies to. Include the workspace name in the task description.
+      """
+    end
   end
 
   defp extract_json(text) do

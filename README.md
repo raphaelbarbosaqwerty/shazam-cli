@@ -802,6 +802,44 @@ config:
   context_budget: 4000    # max chars injected into prompt
 ```
 
+### Engineering Manager (Multi-team)
+
+For projects with multiple teams/repositories, add an Engineering Manager above the PMs. The Manager receives all tasks and delegates to the correct PM based on context.
+
+```
+CEO (you) → Engineering Manager
+  ├── PM Dashboard → dashboard_dev_1, dashboard_dev_2, dashboard_dev_3
+  └── PM VS Code   → vscode_dev_1, vscode_dev_2, vscode_dev_3
+```
+
+```yaml
+agents:
+  manager:
+    role: Engineering Manager
+    model: claude-haiku-4-5-20251001
+    tools: [Read, Grep, Glob, WebSearch]
+
+  pm_dashboard:
+    role: Project Manager — Dashboard
+    supervisor: manager
+    domain: dashboard
+    workspace: dashboard
+
+  pm_vscode:
+    role: Project Manager — VS Code Extension
+    supervisor: manager
+    domain: vscode-extension
+    workspace: vscode
+
+  dashboard_dev_1:
+    role: Senior Frontend Developer
+    supervisor: pm_dashboard
+    workspace: dashboard
+    # ...
+```
+
+The Manager is only needed with multiple teams. Single-team projects use PM directly at the top.
+
 ### Subtask Delegation
 
 When a PM agent outputs a JSON block with subtasks, the SubtaskParser automatically creates child tasks:

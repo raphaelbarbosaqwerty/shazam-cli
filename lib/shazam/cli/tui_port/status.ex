@@ -12,7 +12,10 @@ defmodule Shazam.CLI.TuiPort.Status do
     company_name = Helpers.deep_get(state, [:company, :name]) || "Shazam"
     ralph_status = get_ralph_status(state)
 
-    memory_mb = div(:erlang.memory(:total), 1_048_576)
+    # Memory: BEAM + child processes (claude, codex, cursor, etc.)
+    beam_mem = :erlang.memory(:total)
+    children_mem = get_children_memory()
+    memory_mb = div(beam_mem + children_mem, 1_048_576)
 
     # Get sparklines for active agents
     sparklines = try do
@@ -154,6 +157,52 @@ defmodule Shazam.CLI.TuiPort.Status do
   catch
     :exit, _ -> "idle"
     _, _ -> "idle"
+  end
+
+  defp get_children_memory do
+    # Sum RSS of child processes (claude, codex, cursor, gemini, node, etc.)
+    beam_pid = :os.getpid() |> to_string()
+    try do
+      {output, 0} = System.cmd("ps", ["-o", "rss=", "--ppid", beam_pid], stderr_to_stdout: true)
+      output
+      |> String.split("\n")
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&String.to_integer/1)
+      |> Enum.sum()
+      |> Kernel.*(1024)  # ps reports in KB, convert to bytes
+    rescue
+      _ -> get_children_memory_macos(beam_pid)
+    catch
+      _, _ -> get_children_memory_macos(beam_pid)
+    end
+  end
+
+  # macOS ps doesn't support --ppid
+  defp get_children_memory_macos(beam_pid) do
+    try do
+      {output, 0} = System.cmd("pgrep", ["-P", beam_pid], stderr_to_stdout: true)
+      child_pids = output |> String.split("\n") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+
+      if child_pids == [] do
+        0
+      else
+        {ps_output, 0} = System.cmd("ps", ["-o", "rss=" | child_pids], stderr_to_stdout: true)
+        ps_output
+        |> String.split("\n")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.reduce(0, fn s, acc ->
+          case Integer.parse(s) do
+            {n, _} -> acc + n
+            :error -> acc
+          end
+        end)
+        |> Kernel.*(1024)
+      end
+    catch
+      _, _ -> 0
+    end
   end
 
   def build_dashboard_data(state) do

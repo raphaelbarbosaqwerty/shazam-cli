@@ -28,19 +28,12 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
         Shazam.TaskFiles.sync_to_files(tasks)
         Helpers.send_event(state.port, "system", "info", "Exported #{length(tasks)} tasks to .shazam/tasks/")
 
-      args == "--clear" ->
-        _company_name = Helpers.deep_get(state, [:company, :name])
+      args in ["--clear", "--clear-all"] ->
         if Code.ensure_loaded?(Shazam.TaskBoard) do
           tasks = Helpers.list_tasks(state)
-          # Move completed/failed tasks to ETS only (files stay in .shazam/tasks/)
-          # Only clear from runtime view, not from disk
-          Enum.each(tasks, fn t ->
-            if t.status in [:pending, :in_progress, :awaiting_approval] do
-              Shazam.TaskBoard.delete(t.id)
-            end
-          end)
+          Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
         end
-        Helpers.send_event(state.port, "system", "tasks_cleared", "Active tasks cleared (completed tasks preserved)")
+        Helpers.send_event(state.port, "system", "tasks_cleared", "All tasks cleared")
         Status.send_status(state)
 
       true ->
@@ -221,6 +214,23 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
         {:ok, _} -> Helpers.send_event(state.port, "system", "task_resumed", "Task retrying: #{task_id}")
         {:error, reason} -> Helpers.send_event(state.port, "system", "error", "Cannot retry: #{inspect(reason)}")
       end
+    end
+    Status.send_status(state)
+    state
+  end
+
+  def handle_command("/retry-all", state) do
+    if Code.ensure_loaded?(Shazam.TaskBoard) do
+      tasks = Helpers.list_tasks(state)
+      failed = Enum.filter(tasks, &(&1.status in [:failed, :error]))
+      Enum.each(failed, fn t ->
+        try do
+          Shazam.TaskBoard.retry(t.id)
+        catch
+          _, _ -> :ok
+        end
+      end)
+      Helpers.send_event(state.port, "system", "info", "Retrying #{length(failed)} failed task(s)")
     end
     Status.send_status(state)
     state

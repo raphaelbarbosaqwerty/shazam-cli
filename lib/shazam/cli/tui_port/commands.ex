@@ -60,6 +60,7 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/pause-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
   def handle_command("/resume-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
   def handle_command("/kill-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
+  def handle_command("/retry-all" = cmd, state), do: Tasks.handle_command(cmd, state)
   def handle_command("/retry-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
   def handle_command("/delete-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
   def handle_command("/start-task " <> _ = cmd, state), do: Tasks.handle_command(cmd, state)
