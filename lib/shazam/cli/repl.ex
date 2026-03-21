@@ -90,10 +90,15 @@ defmodule Shazam.CLI.Repl do
 
     # Clear TaskBoard from previous projects and reset counter
     if Code.ensure_loaded?(Shazam.TaskBoard) do
-      try do
-        Shazam.TaskBoard.clear_all()
-      catch
-        _, _ -> :ok
+      # Ensure TaskBoard is alive before clearing
+      case GenServer.whereis(Shazam.TaskBoard) do
+        nil -> :ok  # TaskBoard not running, skip
+        _pid ->
+          try do
+            Shazam.TaskBoard.clear_all()
+          catch
+            _, _ -> :ok
+          end
       end
     end
 

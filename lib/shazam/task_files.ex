@@ -115,9 +115,16 @@ defmodule Shazam.TaskFiles do
           end
 
         unless already_exists do
-          status = try do
-            String.to_existing_atom(task_map.status)
-          rescue
+          status = case task_map.status do
+            s when is_atom(s) -> s
+            "completed" -> :completed
+            "failed" -> :failed
+            "pending" -> :pending
+            "in_progress" -> :in_progress
+            "awaiting_approval" -> :awaiting_approval
+            "paused" -> :paused
+            "rejected" -> :rejected
+            "deleted" -> :deleted
             _ -> :pending
           end
 
@@ -125,6 +132,12 @@ defmodule Shazam.TaskFiles do
           status = if status == :in_progress, do: :pending, else: status
 
           now = DateTime.utc_now()
+          # Truncate large results to prevent memory issues on import
+          result = case task_map[:result] do
+            r when is_binary(r) and byte_size(r) > 10_000 -> String.slice(r, 0..10_000) <> "\n[...truncated]"
+            r -> r
+          end
+
           task = %{
             id: task_map.id,
             title: task_map.title,
@@ -133,7 +146,7 @@ defmodule Shazam.TaskFiles do
             assigned_to: task_map[:assigned_to],
             created_by: task_map[:created_by],
             company: task_map[:company],
-            result: task_map[:result],
+            result: result,
             parent_task_id: task_map[:parent_task_id],
             depends_on: task_map[:depends_on],
             attachments: task_map[:attachments] || [],
@@ -247,7 +260,7 @@ defmodule Shazam.TaskFiles do
             if meta["id"] do
               %{
                 id: meta["id"],
-                title: meta["title"],
+                title: meta["title"] || Path.basename(path, ".md"),
                 status: meta["status"] || "pending",
                 assigned_to: meta["assigned_to"],
                 created_by: meta["created_by"],
@@ -269,6 +282,8 @@ defmodule Shazam.TaskFiles do
       {:error, _} ->
         nil
     end
+  rescue
+    _ -> nil
   end
 
   defp parse_frontmatter(text) do
