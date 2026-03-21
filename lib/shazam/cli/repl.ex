@@ -88,21 +88,8 @@ defmodule Shazam.CLI.Repl do
       end
     end
 
-    # Clear TaskBoard from previous projects and reset counter
-    if Code.ensure_loaded?(Shazam.TaskBoard) do
-      # Ensure TaskBoard is alive before clearing
-      case GenServer.whereis(Shazam.TaskBoard) do
-        nil -> :ok  # TaskBoard not running, skip
-        _pid ->
-          try do
-            Shazam.TaskBoard.clear_all()
-          catch
-            _, _ -> :ok
-          end
-      end
-    end
-
-    # Restore tasks from .shazam/tasks/ markdown files (current workspace only)
+    # Import tasks from .shazam/tasks/ markdown files
+    # The sync handles deduplication — only imports tasks not already in ETS
     try do
       Shazam.TaskFiles.sync_from_files()
     catch
