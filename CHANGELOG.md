@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.9.0 (2026-03-21)
+
+### Features
+- **Enhanced TUI status bar** — sparklines per agent, total cost, git branch, provider
+  - Format: `Petgenda ● running | pm:▅▇█ sr1:▂▃▅ | P:3 R:2 D:5 | $0.42 | main ✓ | 63MB`
+  - Git branch in cyan with ✓ (clean) or ● (dirty) indicator
+  - Total cost in real-time across all agents
+
+- **Task detail view** — press Enter on a task in /tasks overlay
+  - Full task metadata: title, status, agent, created by, created at
+  - Scrollable result output with markdown formatting
+  - Scrollbar for long results, ESC to go back
+
+- **Markdown rendering in TUI** — task results rendered with formatting
+  - Headers (#, ##, ###) with color hierarchy
+  - Bullet lists (- item) with • icon
+  - Checkboxes (- [x] / - [ ]) with ✓/○ icons
+  - Code blocks, blockquotes, tables, horizontal rules
+  - Numbered lists with cyan numbering
+
+- **Inline task actions** — keybindings in /tasks overlay
+  - `a` = approve, `r` = reject, `p` = pause, `x` = kill
+  - No need to open action menu for common operations
+
+- **Overlay scroll persistence** — overlays no longer reset scroll/selection on data refresh
+  - Tasks and Agents overlays maintain position when receiving updates
+
+### Tests
+- **49 new tests** (322 → 371 total, 0 failures)
+  - ContextManager: capture, build_context, learnings, deduplication
+  - ContextRAG: TF-IDF search, scoring, budget, stopwords
+  - GitContext: build_context, current_branch, modified_files
+  - AgentQuery: query, build_instruction, resolve_queries
+  - AgentPulse: tick, sparkline, clear, stalled detection
+  - PluginManager: run_pipeline, list_plugins, notify
+  - ProjectDetector: detect Elixir/Node, domains, agent suggestions
+
+### Removed
+- **Phoenix LiveView web dashboard** — removed experimental web UI (will be a separate project)
+
 ## v0.8.0 (2026-03-20)
 
 ### Features

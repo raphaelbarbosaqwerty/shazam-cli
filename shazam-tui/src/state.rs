@@ -31,6 +31,7 @@ pub enum View {
     Dashboard,
     Help,
     Tasks,
+    TaskDetail,
     Agents,
     Config,
 }
@@ -72,6 +73,7 @@ pub struct AppState {
     pub tasks_selected: usize,
     pub task_action_menu: bool,       // true when action submenu is open
     pub task_action_selected: usize,  // selected action index
+    pub task_detail_scroll: usize,    // scroll offset for task detail view
 
     // Approval queue
     pub pending_approvals: Vec<ApprovalMsg>,
@@ -116,6 +118,11 @@ impl Default for AppState {
                 budget_used: Some(0),
                 budget_total: Some(0),
                 memory_mb: Some(0),
+                total_cost: None,
+                git_branch: None,
+                git_status: None,
+                provider: None,
+                sparklines: None,
             },
             help_scroll: 0,
             agent_list: Vec::new(),
@@ -128,6 +135,7 @@ impl Default for AppState {
             tasks_selected: 0,
             task_action_menu: false,
             task_action_selected: 0,
+            task_detail_scroll: 0,
             view: View::Main,
             dashboard_agents: Vec::new(),
             pending_approvals: Vec::new(),

@@ -92,6 +92,9 @@ You (CEO) ──> describe task in natural language
 | **Agent queries** | Agents can query each other's knowledge without creating tasks |
 | **Project auto-detect** | `shazam init` scans your project and suggests agents, domains, and tech stack |
 | **Agent sparkline** | Real-time activity heartbeat (▁▂▃▄▅▆▇█) with stall detection |
+| **Task detail view** | Press Enter on any task to see full result with markdown formatting |
+| **Inline task actions** | `a`/`r`/`p`/`x` keybindings for approve/reject/pause/kill in task overlay |
+| **Enhanced status bar** | Sparklines, cost, git branch, provider — all in one glance |
 
 ---
 
@@ -489,7 +492,7 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/review --patterns` | Show learned review patterns |
 | `/quit` | Exit Shazam |
 
-**Keyboard shortcuts:** `↑/↓` command history, `Tab` accept ghost text, `PgUp/PgDn` or mouse scroll events, `Enter` open action menu in `/tasks`, `Ctrl+C` exit, `ESC` close overlay. Command history is saved across sessions (`~/.shazam/tui_history`).
+**Keyboard shortcuts:** `↑/↓` command history, `Tab` accept ghost text, `PgUp/PgDn` or mouse scroll events, `Enter` task detail view in `/tasks`, `a` approve, `r` reject, `p` pause, `x` kill (in task overlay), `Ctrl+C` exit, `ESC` close overlay. Command history is saved across sessions (`~/.shazam/tui_history`).
 
 ---
 

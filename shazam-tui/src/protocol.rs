@@ -5,6 +5,7 @@
 ///
 /// Rust → Elixir (user input):
 ///   command, paste, image, key, resize
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 // ── Messages FROM Elixir ──────────────────────────────────────────
@@ -37,6 +38,7 @@ pub struct EventMsg {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct StatusMsg {
     pub company: Option<String>,
     pub status: Option<String>,      // "running" | "paused" | "idle"
@@ -49,6 +51,34 @@ pub struct StatusMsg {
     pub budget_used: Option<u64>,
     pub budget_total: Option<u64>,
     pub memory_mb: Option<u64>,
+    pub total_cost: Option<f64>,
+    pub git_branch: Option<String>,
+    pub git_status: Option<String>,
+    pub provider: Option<String>,
+    pub sparklines: Option<HashMap<String, String>>,
+}
+
+impl Default for StatusMsg {
+    fn default() -> Self {
+        Self {
+            company: None,
+            status: None,
+            agents_total: None,
+            agents_active: None,
+            tasks_pending: None,
+            tasks_running: None,
+            tasks_done: None,
+            tasks_awaiting: None,
+            budget_used: None,
+            budget_total: None,
+            memory_mb: None,
+            total_cost: None,
+            git_branch: None,
+            git_status: None,
+            provider: None,
+            sparklines: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +106,7 @@ pub struct TaskListMsg {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct TaskItem {
     pub id: String,
     pub title: String,
@@ -84,6 +115,24 @@ pub struct TaskItem {
     pub created_by: Option<String>,
     pub created_at: Option<String>,
     pub result: Option<String>,
+    pub description: Option<String>,
+    pub files_touched: Option<Vec<String>>,
+}
+
+impl Default for TaskItem {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            title: String::new(),
+            status: String::from("pending"),
+            assigned_to: None,
+            created_by: None,
+            created_at: None,
+            result: None,
+            description: None,
+            files_touched: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

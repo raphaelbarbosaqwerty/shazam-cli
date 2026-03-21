@@ -188,10 +188,6 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       _, _ -> :ok
     end
 
-    # Step 6: Notify web dashboard is available
-    port = Application.get_env(:shazam, :port, 4040)
-    Helpers.send_event(state.port, "system", "info", "Web dashboard: http://localhost:#{port}")
-
     Status.send_status(state)
     state
   end

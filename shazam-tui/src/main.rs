@@ -195,15 +195,25 @@ fn handle_elixir_msg(msg: InboundMsg, state: &mut AppState) {
             state.view = View::Dashboard;
         }
         InboundMsg::TaskList(t) => {
+            let was_in_tasks = matches!(state.view, View::Tasks | View::TaskDetail);
             state.task_items = t.tasks;
-            state.tasks_scroll = 0;
-            state.tasks_selected = 0;
-            state.view = View::Tasks;
+            if !was_in_tasks {
+                state.tasks_scroll = 0;
+                state.tasks_selected = 0;
+                state.view = View::Tasks;
+            } else if state.tasks_selected >= state.task_items.len() && !state.task_items.is_empty() {
+                state.tasks_selected = state.task_items.len() - 1;
+            }
         }
         InboundMsg::AgentList(a) => {
+            let was_in_agents = matches!(state.view, View::Agents);
             state.agent_list = a.agents;
-            state.agents_selected = 0;
-            state.view = View::Agents;
+            if !was_in_agents {
+                state.agents_selected = 0;
+                state.view = View::Agents;
+            } else if state.agents_selected >= state.agent_list.len() && !state.agent_list.is_empty() {
+                state.agents_selected = state.agent_list.len() - 1;
+            }
         }
         InboundMsg::ConfigInfo(c) => {
             state.config_company = c.company;
@@ -235,6 +245,55 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
         Event::Key(key) => {
             // Handle overlay keys first
             if state.view != View::Main {
+                // Task detail view
+                if state.view == View::TaskDetail {
+                    match key.code {
+                        KeyCode::Esc | KeyCode::Char('q') => {
+                            state.view = View::Tasks;
+                            state.task_detail_scroll = 0;
+                            return;
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            state.task_detail_scroll = state.task_detail_scroll.saturating_sub(1);
+                            return;
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            state.task_detail_scroll += 1;
+                            return;
+                        }
+                        KeyCode::PageUp => {
+                            state.task_detail_scroll = state.task_detail_scroll.saturating_sub(10);
+                            return;
+                        }
+                        KeyCode::PageDown => {
+                            state.task_detail_scroll += 10;
+                            return;
+                        }
+                        // Inline actions from detail view
+                        KeyCode::Char('a') => {
+                            if let Some(task) = state.task_items.get(state.tasks_selected) {
+                                let cmd = format!("/approve {}", task.id);
+                                send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                                send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                            }
+                            state.view = View::Tasks;
+                            state.task_detail_scroll = 0;
+                            return;
+                        }
+                        KeyCode::Char('r') => {
+                            if let Some(task) = state.task_items.get(state.tasks_selected) {
+                                let cmd = format!("/reject {}", task.id);
+                                send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                                send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                            }
+                            state.view = View::Tasks;
+                            state.task_detail_scroll = 0;
+                            return;
+                        }
+                        _ => return,
+                    }
+                }
+
                 // Task action submenu
                 if state.view == View::Tasks && state.task_action_menu {
                     match key.code {
@@ -279,10 +338,61 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                         state.view = View::Main;
                         state.help_scroll = 0;
                         state.task_action_menu = false;
+                        state.task_detail_scroll = 0;
                         return;
                     }
                     KeyCode::Enter => {
                         if state.view == View::Tasks && !state.task_items.is_empty() {
+                            // Open task detail view
+                            state.view = View::TaskDetail;
+                            state.task_detail_scroll = 0;
+                        }
+                        return;
+                    }
+                    // Inline task action keybindings (Task 4)
+                    KeyCode::Char('a') if state.view == View::Tasks => {
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/approve {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                        }
+                        return;
+                    }
+                    KeyCode::Char('r') if state.view == View::Tasks => {
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/reject {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                        }
+                        return;
+                    }
+                    KeyCode::Char('x') if state.view == View::Tasks => {
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/kill-task {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                        }
+                        return;
+                    }
+                    KeyCode::Char('p') if state.view == View::Tasks => {
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/pause-task {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                        }
+                        return;
+                    }
+                    KeyCode::Char('d') if state.view == View::Tasks => {
+                        // 'd' also opens detail view
+                        if !state.task_items.is_empty() {
+                            state.view = View::TaskDetail;
+                            state.task_detail_scroll = 0;
+                        }
+                        return;
+                    }
+                    KeyCode::Char('m') if state.view == View::Tasks => {
+                        // Open action menu (alternative to Enter for action menu)
+                        if !state.task_items.is_empty() {
                             state.task_action_menu = true;
                             state.task_action_selected = 0;
                         }
@@ -469,6 +579,8 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                             .min(state.events.len().saturating_sub(1));
                     } else if state.view == View::Tasks {
                         state.tasks_selected = state.tasks_selected.saturating_sub(3);
+                    } else if state.view == View::TaskDetail {
+                        state.task_detail_scroll = state.task_detail_scroll.saturating_sub(3);
                     } else if state.view == View::Help {
                         state.help_scroll = state.help_scroll.saturating_sub(3);
                     }
@@ -478,6 +590,8 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                         state.scroll_offset = state.scroll_offset.saturating_sub(3);
                     } else if state.view == View::Tasks {
                         state.tasks_selected = (state.tasks_selected + 3).min(state.task_items.len().saturating_sub(1));
+                    } else if state.view == View::TaskDetail {
+                        state.task_detail_scroll += 3;
                     } else if state.view == View::Help {
                         state.help_scroll += 3;
                     }

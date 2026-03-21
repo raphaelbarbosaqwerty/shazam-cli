@@ -21,6 +21,41 @@ defmodule Shazam.CLI.TuiPort.Status do
       _, _ -> %{}
     end
 
+    # Get total cost across all agents
+    total_cost = try do
+      case Shazam.Metrics.get_all() do
+        %{totals: %{estimated_cost: cost}} when is_number(cost) -> cost
+        _ -> 0.0
+      end
+    catch
+      _, _ -> 0.0
+    end
+
+    # Get git branch and status
+    workspace = Application.get_env(:shazam, :workspace)
+
+    git_branch = try do
+      Shazam.GitContext.current_branch(workspace)
+    catch
+      _, _ -> ""
+    end
+
+    git_status = try do
+      case Shazam.GitContext.modified_files(workspace) do
+        [] -> "clean"
+        files when is_list(files) -> "#{length(files)} modified"
+      end
+    catch
+      _, _ -> "unknown"
+    end
+
+    # Get current default provider
+    provider = try do
+      to_string(Application.get_env(:shazam, :default_provider, "claude_code"))
+    catch
+      _, _ -> "claude_code"
+    end
+
     Helpers.send_json(state.port, %{
       type: "status",
       company: company_name,
@@ -34,7 +69,11 @@ defmodule Shazam.CLI.TuiPort.Status do
       budget_used: budget_used,
       budget_total: budget_total,
       memory_mb: memory_mb,
-      sparklines: sparklines
+      sparklines: sparklines,
+      total_cost: total_cost,
+      git_branch: git_branch,
+      git_status: git_status,
+      provider: provider
     })
   end
 

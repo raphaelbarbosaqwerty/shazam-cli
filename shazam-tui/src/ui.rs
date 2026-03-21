@@ -46,6 +46,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         View::Dashboard => draw_dashboard_overlay(f, size, state),
         View::Help => draw_help_overlay(f, size, state),
         View::Tasks => draw_tasks_overlay(f, size, state),
+        View::TaskDetail => draw_task_detail_overlay(f, size, state),
         View::Agents => draw_agents_overlay(f, size, state),
         View::Config => draw_config_overlay(f, size, state),
         View::Main => {
@@ -136,12 +137,6 @@ fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         _ => (Color::DarkGray, "○"),
     };
 
-    let agents = format!(
-        "{}↑/{}",
-        s.agents_active.unwrap_or(0),
-        s.agents_total.unwrap_or(0)
-    );
-
     let awaiting = s.tasks_awaiting.unwrap_or(0);
     let tasks = format!(
         "P:{} R:{} D:{}",
@@ -150,26 +145,11 @@ fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         s.tasks_done.unwrap_or(0)
     );
 
-    let budget_used = s.budget_used.unwrap_or(0);
-    let budget_total = s.budget_total.unwrap_or(1);
-    let budget_pct = if budget_total > 0 {
-        (budget_used as f64 / budget_total as f64 * 100.0).min(100.0) as u32
-    } else {
-        0
-    };
-    let budget_color = if budget_pct > 90 {
-        Color::Red
-    } else if budget_pct > 70 {
-        Color::Yellow
-    } else {
-        Color::Green
-    };
-
     let mut spans = vec![
         Span::styled(
             format!(" {} ", company),
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -177,16 +157,45 @@ fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
             Style::default().fg(status_color),
         ),
         Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
+    ];
+
+    // Sparklines per agent (if available), otherwise fallback to old Agents: format
+    let has_sparklines = s.sparklines.as_ref().map_or(false, |sl| !sl.is_empty());
+    if has_sparklines {
+        let sparklines = s.sparklines.as_ref().unwrap();
+        let mut first = true;
+        for (name, bars) in sparklines {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(Span::styled(
+                format!("{}:", name),
+                Style::default().fg(Color::DarkGray),
+            ));
+            spans.push(Span::styled(
+                bars.clone(),
+                Style::default().fg(Color::Green),
+            ));
+            first = false;
+        }
+        spans.push(Span::raw(" "));
+    } else {
+        let agents = format!(
+            "{}↑/{}",
+            s.agents_active.unwrap_or(0),
+            s.agents_total.unwrap_or(0)
+        );
+        spans.push(Span::styled(
             format!("Agents: {} ", agents),
             Style::default().fg(Color::Cyan),
-        ),
-        Span::styled("│ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("Tasks: {} ", tasks),
-            Style::default().fg(Color::White),
-        ),
-    ];
+        ));
+    }
+
+    spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(
+        format!("{} ", tasks),
+        Style::default().fg(Color::White),
+    ));
 
     // Show awaiting approval count prominently
     if awaiting > 0 {
@@ -199,20 +208,56 @@ fn draw_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         ));
     }
 
+    // Cost: show total_cost if available, otherwise fallback to budget percentage
     spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-    spans.push(Span::styled(
-        format!("Budget: {}% ", budget_pct),
-        Style::default().fg(budget_color),
-    ));
+    if let Some(cost) = s.total_cost {
+        spans.push(Span::styled(
+            format!("${:.2} ", cost),
+            Style::default().fg(Color::White),
+        ));
+    } else {
+        let budget_used = s.budget_used.unwrap_or(0);
+        let budget_total = s.budget_total.unwrap_or(1);
+        let budget_pct = if budget_total > 0 {
+            (budget_used as f64 / budget_total as f64 * 100.0).min(100.0) as u32
+        } else {
+            0
+        };
+        let budget_color = if budget_pct > 90 {
+            Color::Red
+        } else if budget_pct > 70 {
+            Color::Yellow
+        } else {
+            Color::Green
+        };
+        spans.push(Span::styled(
+            format!("Budget: {}% ", budget_pct),
+            Style::default().fg(budget_color),
+        ));
+    }
+
+    // Git branch + status
+    if let Some(ref branch) = s.git_branch {
+        spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("{} ", branch),
+            Style::default().fg(Color::Cyan),
+        ));
+        let git_st = s.git_status.as_deref().unwrap_or("clean");
+        if git_st == "clean" {
+            spans.push(Span::styled("✓ ", Style::default().fg(Color::Green)));
+        } else {
+            spans.push(Span::styled("● ", Style::default().fg(Color::Yellow)));
+        }
+    }
 
     // Memory usage
     let memory_mb = s.memory_mb.unwrap_or(0);
     if memory_mb > 0 {
         spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-        let mem_color = if memory_mb > 512 { Color::Red } else if memory_mb > 256 { Color::Yellow } else { Color::Green };
         spans.push(Span::styled(
-            format!("Mem: {}MB ", memory_mb),
-            Style::default().fg(mem_color),
+            format!("{}MB ", memory_mb),
+            Style::default().fg(Color::DarkGray),
         ));
     }
 
@@ -458,7 +503,7 @@ fn draw_tasks_overlay(f: &mut Frame, area: Rect, state: &AppState) {
     f.render_widget(Clear, popup_area);
 
     let total = state.task_items.len();
-    let title = format!(" Tasks ({}) — ↑↓ navigate, ESC close ", total);
+    let title = format!(" Tasks ({}) — ↑↓ nav, Enter detail, a/r/p approve/reject/pause, ESC close ", total);
 
     let block = Block::default()
         .title(title)
@@ -718,6 +763,287 @@ fn draw_tasks_overlay(f: &mut Frame, area: Rect, state: &AppState) {
             }
         }
     }
+}
+
+fn draw_task_detail_overlay(f: &mut Frame, area: Rect, state: &AppState) {
+    let popup_area = centered_rect(80, 75, area);
+    f.render_widget(Clear, popup_area);
+
+    let task = match state.task_items.get(state.tasks_selected) {
+        Some(t) => t,
+        None => {
+            // No task selected, just show empty
+            let block = Block::default()
+                .title(" Task Detail — ESC to go back ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow))
+                .style(Style::default().bg(Color::Rgb(20, 20, 30)));
+            let inner = block.inner(popup_area);
+            f.render_widget(block, popup_area);
+            let msg = Paragraph::new("No task selected.")
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(msg, inner);
+            return;
+        }
+    };
+
+    let title = format!(" Task: {} — ESC to go back ", truncate_str(&task.id, 20));
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(Color::Rgb(20, 20, 30)));
+
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    // Layout: metadata section + separator + result/content (scrollable)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // Metadata
+            Constraint::Length(1), // Separator
+            Constraint::Min(5),   // Result output (scrollable)
+        ])
+        .split(inner);
+
+    // Metadata section
+    let (status_icon, status_color) = task_status_style(&task.status);
+    let mut meta_lines = vec![
+        Line::from(vec![
+            Span::styled("  Title: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(&task.title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Status: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} {}", status_icon, &task.status), Style::default().fg(status_color)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Assigned to: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                task.assigned_to.as_deref().unwrap_or("—"),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Created by: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                task.created_by.as_deref().unwrap_or("—"),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("  at: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                task.created_at.as_deref().unwrap_or("—"),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+    ];
+
+    // Description
+    if let Some(ref desc) = task.description {
+        if !desc.is_empty() {
+            meta_lines.push(Line::from(vec![
+                Span::styled("  Desc: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    truncate_str(desc, (chunks[0].width as usize).saturating_sub(10).max(20)),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
+        }
+    }
+
+    // Files touched
+    if let Some(ref files) = task.files_touched {
+        if !files.is_empty() {
+            let files_str = files.iter().map(|f| f.as_str()).collect::<Vec<_>>().join(", ");
+            meta_lines.push(Line::from(vec![
+                Span::styled("  Files: ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    truncate_str(&files_str, (chunks[0].width as usize).saturating_sub(10).max(20)),
+                    Style::default().fg(Color::Green),
+                ),
+            ]));
+        }
+    }
+
+    f.render_widget(Paragraph::new(meta_lines), chunks[0]);
+
+    // Separator
+    let sep = "─".repeat(chunks[1].width as usize);
+    f.render_widget(
+        Paragraph::new(Span::styled(sep, Style::default().fg(Color::Rgb(50, 50, 60)))),
+        chunks[1],
+    );
+
+    // Result output (scrollable) — with markdown-like formatting
+    let result_text = task.result.as_deref().unwrap_or("No output yet.");
+    let result_lines: Vec<Line> = result_text
+        .lines()
+        .map(|l| format_md_line(l))
+        .collect();
+
+    let total_result_lines = result_lines.len();
+    let visible_height = chunks[2].height as usize;
+
+    let result_para = Paragraph::new(result_lines)
+        .wrap(Wrap { trim: false })
+        .scroll((state.task_detail_scroll as u16, 0));
+    f.render_widget(result_para, chunks[2]);
+
+    // Scrollbar for result
+    if total_result_lines > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(total_result_lines.saturating_sub(visible_height))
+            .position(state.task_detail_scroll);
+
+        let scrollbar_area = Rect {
+            x: popup_area.x + popup_area.width - 1,
+            y: chunks[2].y,
+            width: 1,
+            height: chunks[2].height,
+        };
+
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(Style::default().fg(Color::Yellow))
+                .track_style(Style::default().fg(Color::Rgb(40, 40, 50))),
+            scrollbar_area,
+            &mut scrollbar_state,
+        );
+    }
+}
+
+/// Parse a line of markdown-like text into styled ratatui Spans.
+fn format_md_line(line: &str) -> Line<'static> {
+    let trimmed = line.trim_start();
+
+    // Headers: # ## ###
+    if trimmed.starts_with("### ") {
+        return Line::from(Span::styled(
+            format!("  {}", &trimmed[4..]),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if trimmed.starts_with("## ") {
+        return Line::from(Span::styled(
+            format!("  {}", &trimmed[3..]),
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if trimmed.starts_with("# ") {
+        return Line::from(Span::styled(
+            format!("  {}", &trimmed[2..]),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        ));
+    }
+
+    // Horizontal rule
+    if trimmed.starts_with("---") || trimmed.starts_with("===") {
+        return Line::from(Span::styled(
+            format!("  {}", "─".repeat(40)),
+            Style::default().fg(Color::Rgb(60, 60, 70)),
+        ));
+    }
+
+    // Bullet list: - item or * item
+    if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        let indent = line.len() - trimmed.len();
+        let prefix = " ".repeat(indent + 2);
+        let content = &trimmed[2..];
+        return Line::from(vec![
+            Span::styled(format!("{}• ", prefix), Style::default().fg(Color::Cyan)),
+            Span::styled(format_inline_md(content), Style::default().fg(Color::White)),
+        ]);
+    }
+
+    // Checkbox: - [x] or - [ ]
+    if trimmed.starts_with("- [x] ") || trimmed.starts_with("- [X] ") {
+        return Line::from(vec![
+            Span::styled("  ✓ ", Style::default().fg(Color::Green)),
+            Span::styled(trimmed[6..].to_string(), Style::default().fg(Color::White)),
+        ]);
+    }
+    if trimmed.starts_with("- [ ] ") {
+        return Line::from(vec![
+            Span::styled("  ○ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(trimmed[6..].to_string(), Style::default().fg(Color::White)),
+        ]);
+    }
+
+    // Numbered list: 1. item
+    if trimmed.len() > 2 && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        if let Some(pos) = trimmed.find(". ") {
+            if pos <= 3 {
+                let num = &trimmed[..pos + 1];
+                let content = &trimmed[pos + 2..];
+                return Line::from(vec![
+                    Span::styled(format!("  {} ", num), Style::default().fg(Color::Cyan)),
+                    Span::styled(format_inline_md(content), Style::default().fg(Color::White)),
+                ]);
+            }
+        }
+    }
+
+    // Code block marker
+    if trimmed.starts_with("```") {
+        let lang = trimmed.trim_start_matches('`').trim();
+        if lang.is_empty() {
+            return Line::from(Span::styled(
+                "  ──────────".to_string(),
+                Style::default().fg(Color::Rgb(80, 80, 100)),
+            ));
+        } else {
+            return Line::from(Span::styled(
+                format!("  ── {} ──", lang),
+                Style::default().fg(Color::Rgb(80, 80, 100)),
+            ));
+        }
+    }
+
+    // Blockquote: > text
+    if trimmed.starts_with("> ") {
+        return Line::from(vec![
+            Span::styled("  │ ", Style::default().fg(Color::Rgb(80, 80, 100))),
+            Span::styled(trimmed[2..].to_string(), Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+        ]);
+    }
+
+    // Table row: | col | col |
+    if trimmed.starts_with("|") && trimmed.ends_with("|") {
+        // Table separator row
+        if trimmed.contains("---") {
+            return Line::from(Span::styled(
+                format!("  {}", trimmed),
+                Style::default().fg(Color::Rgb(60, 60, 70)),
+            ));
+        }
+        return Line::from(Span::styled(
+            format!("  {}", trimmed),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+
+    // Empty line
+    if trimmed.is_empty() {
+        return Line::from(Span::raw(""));
+    }
+
+    // Default: regular text with inline formatting
+    Line::from(Span::styled(
+        format!("  {}", format_inline_md(line)),
+        Style::default().fg(Color::White),
+    ))
+}
+
+/// Format inline markdown: **bold**, `code`, *italic*
+fn format_inline_md(text: &str) -> String {
+    // For TUI we can't mix styles in a single Span easily,
+    // so we strip markers and rely on the context styling
+    text.replace("**", "")
+        .replace("__", "")
+        .replace("*", "")
+        .replace("_", " ")
+        .replace("`", "")
+        .to_string()
 }
 
 fn action_style(action: &str) -> (&str, Color) {
