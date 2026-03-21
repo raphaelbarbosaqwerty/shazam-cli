@@ -176,6 +176,10 @@ defmodule Shazam.CLI.TuiPort.Helpers do
 
   def shutdown(state) do
     cleanup(state)
+
+    # Kill all child processes (Claude, Codex, Cursor, etc.) to prevent orphans
+    kill_child_processes()
+
     # Stop all OTP processes before exiting
     try do
       Application.stop(:shazam)
@@ -184,6 +188,37 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     end
     IO.puts("\nShazam session ended.")
     System.halt(0)
+  end
+
+  defp kill_child_processes do
+    beam_pid = :os.getpid() |> to_string()
+    try do
+      # Find all child PIDs
+      {output, 0} = System.cmd("pgrep", ["-P", beam_pid], stderr_to_stdout: true)
+      child_pids = output |> String.split("\n") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+
+      # Kill each child and their children (recursive)
+      Enum.each(child_pids, fn pid ->
+        # Kill grandchildren first
+        try do
+          {grandchildren, 0} = System.cmd("pgrep", ["-P", pid], stderr_to_stdout: true)
+          grandchildren
+          |> String.split("\n")
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.each(fn gc_pid ->
+            System.cmd("kill", ["-9", gc_pid], stderr_to_stdout: true)
+          end)
+        catch
+          _, _ -> :ok
+        end
+
+        # Then kill the child
+        System.cmd("kill", ["-9", pid], stderr_to_stdout: true)
+      end)
+    catch
+      _, _ -> :ok
+    end
   end
 
   def find_pm_name(state) do
