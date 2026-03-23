@@ -1,11 +1,11 @@
-defmodule Shazam.MixProject do
+defmodule ShazamCLI.MixProject do
   use Mix.Project
 
-  @version "0.9.4"
+  @version "1.0.0"
 
   def project do
     [
-      app: :shazam,
+      app: :shazam_cli,
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
@@ -16,8 +16,7 @@ defmodule Shazam.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
-      mod: {Shazam.Application, []}
+      extra_applications: [:logger]
     ]
   end
 
@@ -31,12 +30,8 @@ defmodule Shazam.MixProject do
 
   defp deps do
     [
-      {:claude_code, "~> 0.29"},
-      {:bandit, "~> 1.0"},
-      {:plug, "~> 1.16"},
-      {:jason, "~> 1.4"},
-      {:cors_plug, "~> 3.0"},
-      {:websock_adapter, "~> 0.5"},
+      # Shazam Core — the backend engine
+      {:shazam, path: "../shazam-core"},
       {:yaml_elixir, "~> 2.9"}
     ]
   end

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="https://github.com/raphaelbarbosaqwerty/shazam-cli.git"
+CORE_REPO="https://github.com/ShazamAI/shazam-core.git"
+CLI_REPO="https://github.com/ShazamAI/shazam-cli.git"
 INSTALL_DIR="${HOME}/bin"
-SHAZAM_DIR="${HOME}/.shazam-cli"
+SHAZAM_HOME="${HOME}/.shazam-install"
+CORE_DIR="${SHAZAM_HOME}/shazam-core"
+CLI_DIR="${SHAZAM_HOME}/shazam-cli"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -22,31 +25,40 @@ if [ -f "$HOME/.cargo/env" ]; then
 fi
 export PATH="$HOME/.cargo/bin:$HOME/bin:$HOME/.local/bin:$PATH"
 
-# ── Clone or update ────────────────────────────────────────
+# ── Clone or update CORE ─────────────────────────────────
 
-if [ -d "$SHAZAM_DIR" ]; then
-  echo -e "${DIM}Updating existing installation...${NC}"
-  cd "$SHAZAM_DIR"
-  git fetch origin --tags --quiet
-  # Checkout latest tag for stable release
-  LATEST_TAG=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
-  if [ -n "$LATEST_TAG" ]; then
-    git checkout "$LATEST_TAG" --quiet 2>/dev/null
-    echo -e "  Using release: ${GREEN}${LATEST_TAG}${NC}"
+clone_or_update() {
+  local repo="$1"
+  local dir="$2"
+  local name="$3"
+
+  if [ -d "$dir" ]; then
+    echo -e "${DIM}Updating ${name}...${NC}"
+    cd "$dir"
+    git fetch origin --tags --force --quiet
+    LATEST_TAG=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
+    if [ -n "$LATEST_TAG" ]; then
+      git checkout "$LATEST_TAG" --quiet 2>/dev/null
+      echo -e "  ${name}: ${GREEN}${LATEST_TAG}${NC}"
+    else
+      git reset --hard origin/main --quiet
+      echo -e "  ${name}: ${GREEN}latest${NC}"
+    fi
   else
-    git reset --hard origin/main --quiet
+    echo -e "${DIM}Cloning ${name}...${NC}"
+    git clone --quiet "$repo" "$dir"
+    cd "$dir"
+    LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+    if [ -n "$LATEST_TAG" ]; then
+      git checkout "$LATEST_TAG" --quiet 2>/dev/null
+      echo -e "  ${name}: ${GREEN}${LATEST_TAG}${NC}"
+    fi
   fi
-else
-  echo -e "${DIM}Cloning shazam-cli...${NC}"
-  git clone --quiet "$REPO" "$SHAZAM_DIR"
-  cd "$SHAZAM_DIR"
-  # Checkout latest tag
-  LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-  if [ -n "$LATEST_TAG" ]; then
-    git checkout "$LATEST_TAG" --quiet 2>/dev/null
-    echo -e "  Using release: ${GREEN}${LATEST_TAG}${NC}"
-  fi
-fi
+}
+
+mkdir -p "$SHAZAM_HOME"
+clone_or_update "$CORE_REPO" "$CORE_DIR" "shazam-core"
+clone_or_update "$CLI_REPO" "$CLI_DIR" "shazam-cli"
 
 echo ""
 
@@ -73,7 +85,6 @@ else
 
   MISSING=0
   check_cmd "elixir" "Install: https://elixir-lang.org/install.html (>= 1.18 required)" || MISSING=1
-  # Check Elixir version >= 1.18
   if command -v elixir &> /dev/null; then
     ELIXIR_VER=$(elixir --version 2>/dev/null | grep "Elixir" | sed 's/.*Elixir //' | cut -d. -f1-2)
     if [ "$(printf '%s\n' "1.18" "$ELIXIR_VER" | sort -V | head -1)" != "1.18" ]; then
@@ -98,17 +109,18 @@ echo ""
 
 # ── Build ──────────────────────────────────────────────────
 
+cd "$CLI_DIR"
+
 if [ "$USE_NIX" = true ]; then
   echo -e "  Building with Nix..."
   nix develop --extra-experimental-features "nix-command flakes" --command bash -c "./build.sh"
 else
-  # Manual build
-  echo "  [1/3] Installing Elixir dependencies..."
+  echo "  [1/4] Installing Elixir dependencies..."
   mix local.hex --force --if-missing > /dev/null 2>&1
   mix local.rebar --force --if-missing > /dev/null 2>&1
   mix deps.get --quiet 2>&1
 
-  echo "  [2/3] Building Rust TUI..."
+  echo "  [2/4] Building Rust TUI..."
   cd shazam-tui
   if ! cargo build --release 2>&1; then
     echo -e "        ${RED}✗ Rust TUI build failed${NC}"
@@ -117,23 +129,19 @@ else
   cd ..
   echo -e "        ${GREEN}✓${NC} shazam-tui built"
 
-  echo "  [3/3] Building Elixir escript..."
+  echo "  [3/4] Building Elixir escript..."
   mix escript.build 2>&1 | head -5
   echo -e "        ${GREEN}✓${NC} shazam-cli built"
 
-  # Install
-  echo ""
+  echo "  [4/4] Installing..."
   mkdir -p "$INSTALL_DIR"
 
-  # Install as shazam-cli (the real binary)
   cp shazam-cli "$INSTALL_DIR/shazam-cli"
   chmod +x "$INSTALL_DIR/shazam-cli"
 
   cp "shazam-tui/target/release/shazam-tui" "$INSTALL_DIR/shazam-tui"
   chmod +x "$INSTALL_DIR/shazam-tui"
 
-  # Create aliases: shazam -> shazam-cli, shz -> shazam-cli
-  # This avoids conflict with macOS /usr/bin/shazam (ShazamKit)
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam"
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shz"
 fi
@@ -160,9 +168,13 @@ fi
 
 echo -e "${GREEN}⚡ Shazam installed successfully!${NC}"
 echo ""
-echo "  Binaries installed:"
+echo "  Installed:"
+echo -e "    ${GREEN}~/.shazam-core${NC}  — backend engine"
+echo -e "    ${GREEN}~/.shazam-cli${NC}   — CLI + TUI"
+echo ""
+echo "  Binaries:"
 echo -e "    ${GREEN}shazam-cli${NC}  — main binary"
-echo -e "    ${GREEN}shazam${NC}      — alias (overrides macOS ShazamKit)"
+echo -e "    ${GREEN}shazam${NC}      — alias"
 echo -e "    ${GREEN}shz${NC}         — short alias"
 echo ""
 echo "  Get started:"

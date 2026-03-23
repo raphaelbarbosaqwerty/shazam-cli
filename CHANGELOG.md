@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.0 (2026-03-23)
+
+### Breaking Changes
+- **Architecture split: Core extracted to separate repository**
+  - Backend engine moved to [ShazamAI/shazam-core](https://github.com/ShazamAI/shazam-core)
+  - CLI depends on `{:shazam, path: "../shazam-core"}`
+  - App renamed from `:shazam` to `:shazam_cli`
+  - Core modules (TaskBoard, RalphLoop, API, Providers, Plugins, etc.) are in shazam-core
+  - CLI retains: Shazam.CLI, TUI port, commands, YAML parser, mix tasks, Rust TUI
+
+- **New installation layout:**
+  - `~/.shazam-install/shazam-core/` — backend engine
+  - `~/.shazam-install/shazam-cli/` — CLI + TUI
+
+- **setup.sh updated** — clones both repos side by side
+
+### Ecosystem
+- [shazam-core](https://github.com/ShazamAI/shazam-core) — Backend engine
+- [shazam-cli](https://github.com/ShazamAI/shazam-cli) — CLI + TUI (this repo)
+- [shazam-dashboard](https://github.com/ShazamAI/shazam-dashboard) — Web dashboard
+- [shazam-building-shazam](https://github.com/ShazamAI/shazam-building-shazam) — Config + specs
+
 ## v0.9.4 (2026-03-23)
 
 ### Changes
