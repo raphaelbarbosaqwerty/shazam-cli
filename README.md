@@ -14,9 +14,18 @@ shazam❯ Build a REST API for user authentication with JWT tokens
   22:15:14 [qa_1]      Started: Write authentication test suite
 ```
 
-**Website:** [shazam.dev](https://shazam.dev) | **Docs:** [shazam.dev/docs](https://shazam.dev/docs) | **Dashboard:** [shazam-dashboard](https://github.com/ShazamAI/shazam-dashboard) | **License:** MIT
+**Website:** [shazam.dev](https://shazam.dev) | **Docs:** [shazam.dev/docs](https://shazam.dev/docs) | **License:** MIT
 
 ![Shazam Demo](docs/images/demo.gif)
+
+## Ecosystem
+
+| Package | Description |
+|---------|-------------|
+| [**shazam-core**](https://github.com/ShazamAI/shazam-core) | Backend engine — TaskBoard, RalphLoop, Providers, Plugins, API |
+| [**shazam-cli**](https://github.com/raphaelbarbosaqwerty/shazam-cli) | CLI + TUI interface (this repo) |
+| [**shazam-dashboard**](https://github.com/ShazamAI/shazam-dashboard) | Web dashboard — Vue 3 + Tailwind |
+| [**shazam-vscode**](https://github.com/ShazamAI/shazam-vscode) | VS Code extension (coming soon) |
 
 ---
 
