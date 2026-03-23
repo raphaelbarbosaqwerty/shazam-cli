@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CORE_REPO="https://github.com/ShazamAI/shazam-core.git"
-CLI_REPO="https://github.com/ShazamAI/shazam-cli.git"
+CLI_REPO="https://github.com/raphaelbarbosaqwerty/shazam-cli.git"
 INSTALL_DIR="${HOME}/bin"
 SHAZAM_HOME="${HOME}/.shazam-install"
 CORE_DIR="${SHAZAM_HOME}/shazam-core"
