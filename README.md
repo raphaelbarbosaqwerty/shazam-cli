@@ -14,7 +14,7 @@ shazam❯ Build a REST API for user authentication with JWT tokens
   22:15:14 [qa_1]      Started: Write authentication test suite
 ```
 
-**Website:** [shazam.dev](https://shazam.dev) | **Docs:** [shazam.dev/docs](https://shazam.dev/docs) | **License:** MIT
+**Website:** [shazam.dev](https://shazam.dev) | **Docs:** [shazam.dev/docs](https://shazam.dev/docs) | **Dashboard:** [shazam-dashboard](https://github.com/ShazamAI/shazam-dashboard) | **License:** MIT
 
 ![Shazam Demo](docs/images/demo.gif)
 
@@ -1188,6 +1188,35 @@ When you say "Add pagination to the users API and update frontend table and mobi
 
 ```
 /workspaces    — List configured workspaces and check paths
+```
+
+---
+
+## Web Dashboard
+
+Shazam includes a companion web dashboard built with Vue 3 + Tailwind CSS that connects to the CLI's REST API and WebSocket.
+
+**Repository:** [github.com/ShazamAI/shazam-dashboard](https://github.com/ShazamAI/shazam-dashboard)
+
+Features:
+- Real-time event feed via WebSocket
+- Task management (create, approve, reject, pause, kill, retry)
+- Agent monitoring with status and metrics
+- Org chart visualization
+- Configuration viewer
+- Dashboard with token usage and cost tracking
+
+The dashboard connects to `localhost:4040` (the Shazam API port) and works alongside the TUI — both can run simultaneously.
+
+```bash
+# Start Shazam CLI (starts the API server)
+shazam
+
+# In another terminal, start the dashboard
+cd shazam-dashboard
+npm install
+npm run dev
+# Open http://localhost:3000
 ```
 
 ---

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.4 (2026-03-23)
+
+### Changes
+- **Budget nil = unlimited** — no more hardcoded 100K default when YAML omits `budget:`
+- **Task import fix** — tasks load from `.shazam/tasks/` on startup with original IDs and status
+- **Paste token expansion** — regex matches both old and new paste formats
+- **UTF-8 safe backspace** — no more crash when deleting multi-byte characters (em-dash)
+- **Orphan process cleanup** — kills all child CLI processes on exit
+- **Workspace enforcement** — CRITICAL prompt prevents agents from creating files outside their workspace
+- **AGENT_QUERY re-execution** — agents receive query answers and continue working
+- **Dashboard** — web dashboard available at [github.com/ShazamAI/shazam-dashboard](https://github.com/ShazamAI/shazam-dashboard)
+
 ## v0.9.3 (2026-03-21)
 
 ### Features
