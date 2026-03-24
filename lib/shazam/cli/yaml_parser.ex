@@ -193,6 +193,7 @@ defmodule Shazam.CLI.YamlParser do
       module_lock: Map.get(config, "module_lock", true),
       peer_reassign: Map.get(config, "peer_reassign", true),
       qa_auto: config["qa_auto"] || false,
+      qa_routing: config["qa_routing"] || false,
       context_history: config["context_history"] || 5,
       team_activity: config["team_activity"] || 10,
       context_budget: config["context_budget"] || 4_000
