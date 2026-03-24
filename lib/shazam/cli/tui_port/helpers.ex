@@ -6,6 +6,10 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   def send_json(port, data) do
     json = Jason.encode!(data)
     Port.command(port, json <> "\n")
+  rescue
+    ArgumentError -> :port_closed
+  catch
+    :error, :badarg -> :port_closed
   end
 
   def send_event(port, agent, event_type, title) do

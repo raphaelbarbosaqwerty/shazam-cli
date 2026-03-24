@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.6 (2026-03-24)
+
+### Bug Fixes
+- **setup.sh escript build killed by SIGPIPE** — `mix escript.build 2>&1 | head -5` closed the pipe after 5 lines, sending SIGPIPE that killed compilation mid-build (at nimble_options). Removed `head -5` and added proper error handling.
+
 ## v1.1.1 (2026-03-24)
 
 ### Breaking Changes (Command Renames)

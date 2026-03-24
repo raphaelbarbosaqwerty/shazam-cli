@@ -69,8 +69,12 @@ defmodule Shazam.CLI.TuiPort do
           end
         end
 
-        # Send initial status
-        Status.send_status(state)
+        # Send initial status (port may still be initializing)
+        try do
+          Status.send_status(state)
+        catch
+          _, _ -> :ok
+        end
 
         # Enter event loop
         loop(state)
