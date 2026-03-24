@@ -131,21 +131,29 @@ defmodule Shazam.CLI.TuiPort.Commands.Tools do
         end
 
       true ->
+        # Expand paste tokens and file mentions
+        description = Helpers.expand_attachments(description, state)
+
         # Create a new plan
-        Helpers.send_event(state.port, pm_name, "info", "Creating plan: #{description}...")
+        short_desc = String.slice(description, 0..80)
+        Helpers.send_event(state.port, pm_name, "info", "Creating plan: #{short_desc}...")
 
         prompt = Shazam.PlanManager.build_plan_prompt(description)
         plan_id = Shazam.PlanManager.next_id()
 
         if Code.ensure_loaded?(Shazam.TaskBoard) do
           Shazam.TaskBoard.create(%{
-            title: "Create plan: #{description}",
+            title: "Create plan: #{short_desc}",
             assigned_to: pm_name,
             created_by: "human",
             company: company_name,
             description: prompt <> "\n\nPlan ID: #{plan_id}\nAfter generating the plan JSON, the system will save it for review."
           })
-          Helpers.send_event(state.port, pm_name, "task_created", "Planning task created. Once PM completes, review with /plan --show #{plan_id}")
+
+          plan_path = Path.join(Shazam.PlanManager.plans_dir(), "#{plan_id}.md")
+          Helpers.send_event(state.port, pm_name, "task_created",
+            "Planning task assigned to #{pm_name}. When done: /plan --show #{plan_id} → /plan --approve #{plan_id}")
+          Helpers.send_event(state.port, "system", "info", "Plan will be saved to: #{plan_path}")
         end
     end
 
