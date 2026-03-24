@@ -366,6 +366,15 @@ fn handle_terminal_event(ev: Event, state: &mut AppState) {
                         }
                         return;
                     }
+                    KeyCode::Char('t') if state.view == View::Tasks => {
+                        // 't' = retry task
+                        if let Some(task) = state.task_items.get(state.tasks_selected) {
+                            let cmd = format!("/retry-task {}", task.id);
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: cmd }));
+                            send_to_elixir(&OutboundMsg::Command(CommandMsg { raw: "/tasks".into() }));
+                        }
+                        return;
+                    }
                     KeyCode::Char('x') if state.view == View::Tasks => {
                         if let Some(task) = state.task_items.get(state.tasks_selected) {
                             let cmd = format!("/kill-task {}", task.id);
