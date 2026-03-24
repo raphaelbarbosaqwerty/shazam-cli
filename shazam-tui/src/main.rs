@@ -27,16 +27,26 @@ enum AppEvent {
 }
 
 fn main() {
+    // --check flag: verify binary works without starting TUI
+    if std::env::args().any(|a| a == "--check") {
+        println!("shazam-tui ok");
+        return;
+    }
+
     // Log any fatal errors so they can be diagnosed
     std::panic::set_hook(Box::new(|info| {
+        let msg = format!("PANIC: {}", info);
+        eprintln!("{}", msg);
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/shazam-tui.log") {
-            let _ = writeln!(f, "PANIC: {}", info);
+            let _ = writeln!(f, "{}", msg);
         }
     }));
 
     if let Err(e) = real_main() {
+        let msg = format!("FATAL: {}", e);
+        eprintln!("{}", msg);
         if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/shazam-tui.log") {
-            let _ = writeln!(f, "FATAL: {}", e);
+            let _ = writeln!(f, "{}", msg);
         }
         // Try to restore terminal before exiting
         let _ = terminal::disable_raw_mode();
@@ -46,14 +56,34 @@ fn main() {
     }
 }
 
+fn tui_log(msg: &str) {
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/shazam-tui.log") {
+        let _ = writeln!(f, "{}", msg);
+    }
+}
+
 fn real_main() -> io::Result<()> {
+    tui_log("startup: begin");
+
     // With Erlang's nouse_stdio:
     //   fd 0 (stdin)  = terminal (free for crossterm input)
     //   fd 1 (stdout) = terminal (free for ratatui output)
     //   fd 3 = read from Elixir (Elixir Port.command writes here)
     //   fd 4 = write to Elixir (Elixir receives as port data)
 
+    // Verify fd 3 exists before proceeding
+    let fd3_ok = unsafe { libc::fcntl(3, libc::F_GETFD) } != -1;
+    let fd4_ok = unsafe { libc::fcntl(4, libc::F_GETFD) } != -1;
+    tui_log(&format!("startup: fd3={} fd4={}", fd3_ok, fd4_ok));
+
+    if !fd3_ok || !fd4_ok {
+        tui_log("startup: fd3/fd4 not available — not launched from Elixir port?");
+        eprintln!("Error: shazam-tui must be launched from shazam (Elixir port with nouse_stdio)");
+        return Ok(());
+    }
+
     // Set up terminal on stdout (which IS the terminal now)
+    tui_log("startup: enabling raw mode");
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(
@@ -82,35 +112,40 @@ fn real_main() -> io::Result<()> {
     // Thread 1: Read JSON from fd 3 (Elixir Port pipe)
     let tx_elixir = tx.clone();
     thread::spawn(move || {
+        tui_log("fd3-reader: thread started");
         // fd 3 = input from Elixir (nouse_stdio mode)
         let elixir_in = unsafe { std::fs::File::from_raw_fd(3) };
         let reader = BufReader::new(elixir_in);
+        let mut line_count = 0u32;
         for line in reader.lines() {
             match line {
                 Ok(json) => {
+                    line_count += 1;
+                    if line_count <= 3 {
+                        tui_log(&format!("fd3-reader: line {} len={}", line_count, json.len()));
+                    }
                     if json.trim().is_empty() {
                         continue;
                     }
                     match serde_json::from_str::<InboundMsg>(&json) {
                         Ok(msg) => {
                             if tx_elixir.send(AppEvent::Elixir(msg)).is_err() {
+                                tui_log("fd3-reader: channel closed, breaking");
                                 break;
                             }
                         }
                         Err(_e) => {
-                            if let Ok(mut f) = OpenOptions::new()
-                                .create(true)
-                                .append(true)
-                                .open("/tmp/shazam-tui.log")
-                            {
-                                let _ = writeln!(f, "JSON parse error: {} — line: {}", _e, json);
-                            }
+                            tui_log(&format!("fd3-reader: JSON parse error: {} — line: {}", _e, json));
                         }
                     }
                 }
-                Err(_) => break,
+                Err(e) => {
+                    tui_log(&format!("fd3-reader: read error: {}", e));
+                    break;
+                }
             }
         }
+        tui_log(&format!("fd3-reader: exiting after {} lines", line_count));
         let _ = tx_elixir.send(AppEvent::ElixirClosed);
     });
 
@@ -127,6 +162,7 @@ fn real_main() -> io::Result<()> {
     });
 
     // Main loop: process events, render
+    tui_log("main-loop: entering");
     let mut last_refresh = std::time::Instant::now();
     while state.running {
         terminal.draw(|f| ui::draw(f, &state))?;
@@ -162,6 +198,8 @@ fn real_main() -> io::Result<()> {
         }
     }
 
+    tui_log("main-loop: exited (running=false)");
+
     // Cleanup terminal
     terminal::disable_raw_mode()?;
     execute!(
@@ -178,6 +216,7 @@ fn real_main() -> io::Result<()> {
 fn handle_event(event: AppEvent, state: &mut AppState) {
     match event {
         AppEvent::ElixirClosed => {
+            tui_log("event: ElixirClosed — shutting down");
             state.running = false;
         }
         AppEvent::Elixir(msg) => handle_elixir_msg(msg, state),
