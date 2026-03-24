@@ -174,31 +174,27 @@ if [ -f "$RC_FILE" ] && grep -q 'HOME/bin' "$RC_FILE" 2>/dev/null; then
 fi
 
 if [ "$PATH_OK" = true ]; then
-  echo -e "${GREEN}✓${NC} ${INSTALL_DIR} is in your PATH"
+  echo -e "${GREEN}✓${NC} ~/bin is in your PATH"
 else
-  echo ""
-  echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
-  echo -e "${RED}║  ${YELLOW}IMPORTANT: ${NC}${RED}Add ~/bin to your PATH to use shazam!            ║${NC}"
-  echo -e "${RED}║                                                              ║${NC}"
-  echo -e "${RED}║  ${NC}Run this command now:${RED}                                        ║${NC}"
-  echo -e "${RED}║                                                              ║${NC}"
-  echo -e "${RED}║  ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ${RC_FILE}${NC}${RED}${NC}"
-  echo -e "${RED}║  ${GREEN}source ${RC_FILE}${NC}"
-  echo -e "${RED}║                                                              ║${NC}"
-  echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
-  echo ""
+  # Auto-add to shell rc
+  echo 'export PATH="$HOME/bin:$PATH"' >> "$RC_FILE"
+  echo -e "${GREEN}✓${NC} Added ~/bin to PATH in ${RC_FILE}"
+  echo -e "${DIM}  Run: source ${RC_FILE}  (or open a new terminal)${NC}"
+  export PATH="$HOME/bin:$PATH"
 fi
 
+echo ""
 echo -e "${GREEN}⚡ Shazam installed successfully!${NC}"
 echo ""
-echo "  Installed:"
-echo -e "    ${GREEN}~/.shazam-core${NC}  — backend engine"
-echo -e "    ${GREEN}~/.shazam-cli${NC}   — CLI + TUI"
+echo "  Installed to:"
+echo -e "    ${GREEN}~/.shazam-install/shazam-core${NC}  — backend engine"
+echo -e "    ${GREEN}~/.shazam-install/shazam-cli${NC}   — CLI + TUI"
 echo ""
-echo "  Binaries:"
+echo "  Binaries (~/bin/):"
 echo -e "    ${GREEN}shazam-cli${NC}  — main binary"
 echo -e "    ${GREEN}shazam${NC}      — alias"
 echo -e "    ${GREEN}shz${NC}         — short alias"
+echo -e "    ${GREEN}shazam-tui${NC}  — Rust TUI"
 echo ""
 echo "  Get started:"
 echo -e "    ${YELLOW}shazam init${NC}      Create a shazam.yaml config"

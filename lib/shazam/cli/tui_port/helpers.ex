@@ -99,50 +99,48 @@ defmodule Shazam.CLI.TuiPort.Helpers do
   @tui_binary "shazam-tui"
 
   def find_tui_binary do
-    # 1. Next to the running executable (Burrito standalone or escript)
+    home = System.get_env("HOME") || "."
+
+    # 1. Next to the running executable (escript at ~/bin/)
     self_dir = case :init.get_argument(:progname) do
       {:ok, [[progname]]} -> Path.dirname(to_string(progname))
       _ -> nil
     end
-    # Also check next to System argv0
-    argv0_dir = case System.argv() do
-      _ ->
-        case System.find_executable("shazam-cli") || System.find_executable("shazam") do
-          nil -> self_dir
-          path -> Path.dirname(path)
-        end
+
+    argv0_dir = case System.find_executable("shazam-cli") || System.find_executable("shazam") do
+      nil -> self_dir
+      path -> Path.dirname(path)
     end
 
     sibling_path = if argv0_dir, do: Path.join(argv0_dir, @tui_binary)
 
-    # 2. Check priv/ in the OTP release
+    # 2. ~/bin/ (standard install location)
+    home_bin_path = Path.join([home, "bin", @tui_binary])
+
+    # 3. ~/.shazam-install build output (if running escript from install dir)
+    install_build_path = Path.join([home, ".shazam-install", "shazam-cli", "shazam-tui", "target", "release", @tui_binary])
+
+    # 4. Check in PATH
+    system_path = System.find_executable(@tui_binary)
+
+    # 5. Check priv/ in OTP release
     priv_path = case :code.priv_dir(:shazam) do
       {:error, _} -> nil
       dir -> Path.join(to_string(dir), @tui_binary)
     end
 
-    # 3. Check relative to project (dev mode)
+    # 6. Relative paths (dev mode)
     project_path = Path.join(["priv", @tui_binary])
-
-    # 4. Check shazam-tui/target/release (dev build)
     dev_build_path = Path.join(["shazam-tui", "target", "release", @tui_binary])
-
-    # 5. Check in PATH
-    system_path = System.find_executable(@tui_binary)
-
-    # 6. Check next to Burrito cache (extracted release)
-    burrito_path = case System.get_env("BURRITO_CACHE_DIR") do
-      nil -> nil
-      dir -> Path.join(dir, @tui_binary)
-    end
 
     cond do
       sibling_path && File.regular?(sibling_path) -> sibling_path
+      File.regular?(home_bin_path) -> home_bin_path
+      File.regular?(install_build_path) -> install_build_path
+      system_path -> system_path
       priv_path && File.regular?(priv_path) -> priv_path
-      burrito_path && File.regular?(burrito_path) -> burrito_path
       File.regular?(project_path) -> Path.expand(project_path)
       File.regular?(dev_build_path) -> Path.expand(dev_build_path)
-      system_path -> system_path
       true -> nil
     end
   end
