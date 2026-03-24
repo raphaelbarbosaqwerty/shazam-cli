@@ -1,6 +1,6 @@
 defmodule Shazam.CLI.TuiPort.Commands.System do
   @moduledoc """
-  System commands: /quit, /exit, /help, /start, /stop, /pause, /resume,
+  System commands: /quit, /exit, /help, /start, /stop, /resume,
   /restart, /dashboard, /status, /config, /clear, /memory, /workspaces,
   /github sync
   """
@@ -19,16 +19,16 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
   def handle_command("/help", state) do
     commands = [
       "/start              — Start agents",
-      "/stop               — Stop agents (keep REPL open)",
-      "/pause              — Pause RalphLoop",
+      "/stop               — Pause agents (keep shell open)",
       "/resume             — Resume RalphLoop",
-      "/dashboard          — Agent progress dashboard",
-      "/status             — Company and agent overview",
+      "/dashboard          — Open agent dashboard with metrics and current tasks",
+      "/status             — Refresh status bar",
       "/agents             — List all agents with status",
       "/org                — Show org chart",
       "/tasks              — List tasks [--clear|--sync|--export]",
       "/task <title>       — Create a new task [--to agent]",
-      "/approve [id]       — Approve pending task (--all for batch)",
+      "/approve <id>       — Approve pending task",
+      "/approve-all        — Approve all pending tasks",
       "/aa                 — Approve all pending tasks (shortcut)",
       "/reject <id>        — Reject a pending task",
       "/msg <ag> <msg>     — Send message to agent",
@@ -69,9 +69,9 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       "/review --learn     — Learn patterns from recent merged PR reviews",
       "/review --patterns  — Show learned review patterns",
       "",
-      "Memory Bank:",
-      "/memory-bank        — Show project memory bank files",
-      "/memory-bank --update — Update memory bank by analyzing codebase",
+      "Knowledge:",
+      "/knowledge          — List knowledge/memory bank files",
+      "/knowledge --update — Analyze codebase and update knowledge bank",
       "",
       "Planning:",
       "/plan <description>  — Create an execution plan (PM analyzes and generates)",
@@ -89,12 +89,11 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       "Plugins:",
       "/plugins             — List loaded plugins",
       "/plugins reload      — Reload plugins from .shazam/plugins/",
-      "/plugin install <owner>/<repo>         — Install plugin from GitHub repo",
-      "/plugin install <owner>/<repo> --path <file> — Install specific file from repo",
-      "/plugin remove <name>                  — Remove a plugin",
+      "/plugins install <owner>/<repo>        — Install plugin from GitHub repo",
+      "/plugins install <owner>/<repo> --path <file> — Install specific file from repo",
+      "/plugins remove <name>                 — Remove a plugin",
       "",
       "/restart            — Restart Shazam (stop all agents + re-init)",
-      "/restart -f         — Force restart (same behavior, explicit flag)",
       "/github sync        — Re-import from GitHub Projects without restarting",
       "/exit               — Exit Shazam",
       "",
@@ -221,8 +220,6 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     state
   end
 
-  def handle_command("/pause", state), do: handle_command("/stop", state)
-
   def handle_command("/resume", state) do
     company_name = state.company[:name] || state.company.name
     try do
@@ -346,11 +343,11 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     state
   end
 
-  def handle_command("/plugin install " <> args, state) do
+  def handle_command("/plugins install " <> args, state) do
     {repo, opts} = parse_plugin_install_args(args)
 
     if repo == "" do
-      Helpers.send_event(state.port, "system", "error", "Usage: /plugin install <owner>/<repo> [--path path/to/file.ex]")
+      Helpers.send_event(state.port, "system", "error", "Usage: /plugins install <owner>/<repo> [--path path/to/file.ex]")
       state
     else
       Helpers.send_event(state.port, "system", "info", "Installing plugin from #{repo}...")
@@ -402,7 +399,7 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     end
   end
 
-  def handle_command("/plugin remove " <> name, state) do
+  def handle_command("/plugins remove " <> name, state) do
     name = String.trim(name)
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
     plugins_dir = Path.join(workspace, ".shazam/plugins")
@@ -469,9 +466,7 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     state
   end
 
-  def handle_command("/restart" <> rest, state) do
-    _force = String.contains?(rest, "-f")
-
+  def handle_command("/restart" <> _rest, state) do
     Helpers.send_event(state.port, "system", "info", "Restarting Shazam...")
 
     # Stop all running tasks

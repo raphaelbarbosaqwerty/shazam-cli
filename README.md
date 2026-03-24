@@ -112,7 +112,7 @@ You (CEO) ──> describe task in natural language
 | **QA real test generation** | QA agents write and run actual tests, not just checklists (`QAManager.generate_test_task/1`) |
 | **Secrets obfuscation plugin** | Detects and masks API keys, tokens, passwords before sending to AI providers |
 | **JSON logger plugin** | Structured event logs in `.shazam/logs/events.json` (secrets auto-scrubbed) |
-| **Plugin install from GitHub** | `/plugin install <owner>/<repo>` to install plugins directly from GitHub repos |
+| **Plugin install from GitHub** | `/plugins install <owner>/<repo>` to install plugins directly from GitHub repos |
 
 ---
 
@@ -472,16 +472,15 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 |---|---|
 | `/start` | Start agents |
 | `/stop` | Stop agents (keep REPL open) |
-| `/pause` | Pause RalphLoop |
 | `/resume` | Resume RalphLoop |
-| `/dashboard` | Agent progress dashboard |
-| `/status` | Company and agent overview |
+| `/status` | Refresh status bar |
+| `/dashboard` | Open agent dashboard with metrics and current tasks |
 | `/agents` | List all agents with status |
 | `/org` | Show org chart |
 | `/tasks` | List tasks (`--clear`, `--sync`, `--export`) |
 | `/task <title>` | Create a new task (`--to agent`) |
-| `/approve [id]` | Approve pending task (`--all` for batch) |
-| `/aa` | Approve all pending tasks (shortcut) |
+| `/approve <id>` | Approve a specific task by ID |
+| `/aa` | Approve all pending tasks (alias: `/approve-all`) |
 | `/reject <id>` | Reject a pending task |
 | `/msg <agent> <msg>` | Send message to agent |
 | `/auto-approve` | Toggle auto-approve (`on`/`off`) |
@@ -506,11 +505,10 @@ When running `shazam` (or `shazam shell`), the following `/commands` are availab
 | `/workspaces` | List configured workspaces (multi-repo) |
 | `/plugins` | List loaded plugins |
 | `/plugins reload` | Hot-reload plugins from `.shazam/plugins/` |
-| `/plugin install <owner>/<repo>` | Install plugin from GitHub repo |
-| `/plugin install <owner>/<repo> --path file.ex` | Install specific plugin file from repo |
-| `/plugin remove <name>` | Remove a plugin |
+| `/plugins install <owner>/<repo>` | Install plugin from GitHub repo |
+| `/plugins install <owner>/<repo> --path file.ex` | Install specific plugin file from repo |
+| `/plugins remove <name>` | Remove a plugin |
 | `/restart` | Restart Shazam (stop agents + re-init) |
-| `/restart -f` | Force restart |
 | `/github sync` | Re-import tasks from GitHub Projects |
 | `/review --learn` | Learn patterns from merged PR reviews |
 | `/review --patterns` | Show learned review patterns |
@@ -771,23 +769,23 @@ plugins:
 
 - `/plugins` — list loaded plugins
 - `/plugins reload` — hot-reload plugins from disk (no restart needed)
-- `/plugin install <owner>/<repo>` — install plugins from a GitHub repo
-- `/plugin remove <name>` — remove an installed plugin
+- `/plugins install <owner>/<repo>` — install plugins from a GitHub repo
+- `/plugins remove <name>` — remove an installed plugin
 
 #### Installing Plugins
 
 ```bash
 # Install all plugins from a GitHub repo
-/plugin install ShazamAI/shazam-core
+/plugins install ShazamAI/shazam-core
 
 # Install a specific plugin file
-/plugin install ShazamAI/shazam-core --path examples/plugins/06_json_logger.ex
+/plugins install ShazamAI/shazam-core --path examples/plugins/06_json_logger.ex
 
 # Remove a plugin
-/plugin remove json_logger
+/plugins remove json_logger
 
 # List loaded plugins
-/plugin
+/plugins
 
 # Reload after manual changes
 /plugins reload

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.1.1 (2026-03-24)
+
+### Breaking Changes (Command Renames)
+- `/pause` removed (use `/stop` instead)
+- `/plugin install` → `/plugins install`
+- `/plugin remove` → `/plugins remove`
+- `/memory-bank` → `/knowledge`
+- `/memory-bank --update` → `/knowledge --update`
+- `/restart -f` removed (just use `/restart`)
+- `/approve --all` removed (use `/aa` or `/approve-all`)
+- `/tasks --clear-all` removed (use `/tasks --clear`)
+
+### Improvements
+- `/approve <id>` now requires explicit task ID
+- `/status` vs `/dashboard` clearly differentiated
+- Runtime config changes show "session only" warning
+
 ## v1.1.0 (2026-03-24)
 
 ### Features

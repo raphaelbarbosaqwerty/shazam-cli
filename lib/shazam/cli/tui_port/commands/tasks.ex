@@ -28,7 +28,7 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
         Shazam.TaskFiles.sync_to_files(tasks)
         Helpers.send_event(state.port, "system", "info", "Exported #{length(tasks)} tasks to .shazam/tasks/")
 
-      args in ["--clear", "--clear-all"] ->
+      args == "--clear" ->
         if Code.ensure_loaded?(Shazam.TaskBoard) do
           tasks = Helpers.list_tasks(state)
           Enum.each(tasks, fn t -> Shazam.TaskBoard.delete(t.id) end)
@@ -73,17 +73,8 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
     state
   end
 
-  def handle_command("/approve" <> rest, state) do
-    args = String.trim(rest)
-    cond do
-      args in ["--all", "-all"] ->
-        Helpers.approve_all(state)
-        Helpers.send_json(state.port, %{type: "clear_approvals"})
-      args != "" ->
-        Helpers.approve_task(args, state)
-      true ->
-        Helpers.approve_next(state)
-    end
+  def handle_command("/approve " <> task_id, state) do
+    Helpers.approve_task(String.trim(task_id), state)
     Status.send_status(state)
     state
   end
@@ -134,11 +125,13 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
         if Code.ensure_loaded?(Shazam.RalphLoop) do
           Shazam.RalphLoop.set_auto_approve(company_name, true)
           Helpers.send_event(state.port, "system", "config_changed", "Auto-approve: ON")
+          Helpers.send_event(state.port, "system", "info", "(session only — add `auto_approve: true` to shazam.yaml to persist)")
         end
       arg in ["off", "false", "no"] ->
         if Code.ensure_loaded?(Shazam.RalphLoop) do
           Shazam.RalphLoop.set_auto_approve(company_name, false)
           Helpers.send_event(state.port, "system", "config_changed", "Auto-approve: OFF")
+          Helpers.send_event(state.port, "system", "info", "(session only — add `auto_approve: false` to shazam.yaml to persist)")
         end
       true ->
         # Toggle
@@ -148,6 +141,7 @@ defmodule Shazam.CLI.TuiPort.Commands.Tasks do
               new_val = !current
               Shazam.RalphLoop.set_auto_approve(company_name, new_val)
               Helpers.send_event(state.port, "system", "config_changed", "Auto-approve: #{if new_val, do: "ON", else: "OFF"}")
+              Helpers.send_event(state.port, "system", "info", "(session only — update shazam.yaml to persist)")
             _ ->
               Helpers.send_event(state.port, "system", "info", "Start agents first with /start")
           end

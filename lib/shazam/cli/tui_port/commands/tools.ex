@@ -1,11 +1,11 @@
 defmodule Shazam.CLI.TuiPort.Commands.Tools do
   @moduledoc """
-  Tool commands: /plan, /qa, /memory-bank, /memory-bank --update
+  Tool commands: /plan, /qa, /knowledge, /knowledge --update
   """
 
   alias Shazam.CLI.TuiPort.{Helpers, Status}
 
-  def handle_command("/memory-bank --update", state) do
+  def handle_command("/knowledge --update", state) do
     company_name = Helpers.deep_get(state, [:company, :name])
     pm_name = Helpers.find_pm_name(state)
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
@@ -60,22 +60,22 @@ defmodule Shazam.CLI.TuiPort.Commands.Tools do
     state
   end
 
-  def handle_command("/memory-bank", state) do
+  def handle_command("/knowledge", state) do
     workspace = Application.get_env(:shazam, :workspace, File.cwd!())
     memories_dir = Path.join(workspace, ".shazam/memories")
 
     if File.dir?(memories_dir) do
       files = list_memory_files(memories_dir, "")
       if files == [] do
-        Helpers.send_event(state.port, "system", "info", "Memory bank empty. Run /memory-bank --update")
+        Helpers.send_event(state.port, "system", "info", "Knowledge bank empty. Run /knowledge --update")
       else
-        Helpers.send_event(state.port, "system", "info", "Memory bank (.shazam/memories/):")
+        Helpers.send_event(state.port, "system", "info", "Knowledge bank (.shazam/memories/):")
         Enum.each(files, fn file ->
           Helpers.send_event(state.port, "system", "info", "  #{file}")
         end)
       end
     else
-      Helpers.send_event(state.port, "system", "info", "No memory bank found. Run /memory-bank --update")
+      Helpers.send_event(state.port, "system", "info", "No knowledge bank found. Run /knowledge --update")
     end
     state
   end
@@ -201,10 +201,12 @@ defmodule Shazam.CLI.TuiPort.Commands.Tools do
       args == "--auto on" ->
         Application.put_env(:shazam, :qa_auto, true)
         Helpers.send_event(state.port, "system", "info", "QA auto-generation: ON")
+        Helpers.send_event(state.port, "system", "info", "(session only — add `qa_auto: true` to shazam.yaml to persist)")
 
       args == "--auto off" ->
         Application.put_env(:shazam, :qa_auto, false)
         Helpers.send_event(state.port, "system", "info", "QA auto-generation: OFF")
+        Helpers.send_event(state.port, "system", "info", "(session only — add `qa_auto: false` to shazam.yaml to persist)")
 
       String.starts_with?(args, "--validate ") ->
         task_id = String.trim_leading(args, "--validate ") |> String.trim()

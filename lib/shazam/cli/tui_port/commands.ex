@@ -13,7 +13,6 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/help" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/start" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/stop" = cmd, state), do: System.handle_command(cmd, state)
-  def handle_command("/pause" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/resume" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/dashboard" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/status" = cmd, state), do: System.handle_command(cmd, state)
@@ -24,8 +23,8 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/workspaces" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/restart" <> _ = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/github sync" = cmd, state), do: System.handle_command(cmd, state)
-  def handle_command("/plugin install " <> _ = cmd, state), do: System.handle_command(cmd, state)
-  def handle_command("/plugin remove " <> _ = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugins install " <> _ = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugins remove " <> _ = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/plugins reload" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/plugins" = cmd, state), do: System.handle_command(cmd, state)
 
@@ -45,10 +44,10 @@ defmodule Shazam.CLI.TuiPort.Commands do
 
   def handle_command("/review " <> _ = cmd, state), do: Review.handle_command(cmd, state)
 
-  # ── Tool commands (plan, qa, memory-bank) ────────────────
+  # ── Tool commands (plan, qa, knowledge) ──────────────────
 
-  def handle_command("/memory-bank --update" = cmd, state), do: Tools.handle_command(cmd, state)
-  def handle_command("/memory-bank" = cmd, state), do: Tools.handle_command(cmd, state)
+  def handle_command("/knowledge --update" = cmd, state), do: Tools.handle_command(cmd, state)
+  def handle_command("/knowledge" = cmd, state), do: Tools.handle_command(cmd, state)
   def handle_command("/plan " <> _ = cmd, state), do: Tools.handle_command(cmd, state)
   def handle_command("/qa" <> _ = cmd, state), do: Tools.handle_command(cmd, state)
 
