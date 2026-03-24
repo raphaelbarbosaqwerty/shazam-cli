@@ -91,6 +91,7 @@ pub struct AppState {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Attachment {
     Paste { id: usize, content: String, lines: usize },
     Image { id: usize, path: String },

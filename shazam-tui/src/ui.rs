@@ -6,8 +6,6 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Wrap},
     Frame,
 };
-use unicode_width::UnicodeWidthChar;
-
 use crate::state::{AppState, Attachment, EventColor, EventLine, View};
 
 /// Main render function — called every frame.

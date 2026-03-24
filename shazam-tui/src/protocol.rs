@@ -87,6 +87,7 @@ pub struct DashboardMsg {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct DashboardAgent {
     pub name: String,
     pub role: Option<String>,
@@ -169,6 +170,7 @@ pub struct ConfigInfoMsg {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ApprovalMsg {
     pub task_id: String,
     pub title: String,
@@ -186,6 +188,7 @@ pub struct GhostTextMsg {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum OutboundMsg {
     Command(CommandMsg),
     Paste(PasteMsg),
