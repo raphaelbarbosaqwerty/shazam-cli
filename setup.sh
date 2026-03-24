@@ -35,10 +35,16 @@ clone_or_update() {
   if [ -d "$dir" ]; then
     echo -e "${DIM}Updating ${name}...${NC}"
     cd "$dir"
+    # Clean any dirty state that would block checkout
+    git reset --hard HEAD --quiet 2>/dev/null || true
+    git clean -fd --quiet 2>/dev/null || true
     git fetch origin --tags --force --quiet
     LATEST_TAG=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
     if [ -n "$LATEST_TAG" ]; then
-      git checkout "$LATEST_TAG" --quiet 2>/dev/null
+      if ! git checkout "$LATEST_TAG" --quiet 2>&1; then
+        echo -e "  ${YELLOW}Warning: checkout failed, forcing...${NC}"
+        git checkout -f "$LATEST_TAG" --quiet
+      fi
       echo -e "  ${name}: ${GREEN}${LATEST_TAG}${NC}"
     else
       git reset --hard origin/main --quiet
@@ -50,7 +56,7 @@ clone_or_update() {
     cd "$dir"
     LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
     if [ -n "$LATEST_TAG" ]; then
-      git checkout "$LATEST_TAG" --quiet 2>/dev/null
+      git checkout "$LATEST_TAG" --quiet 2>/dev/null || git checkout -f "$LATEST_TAG" --quiet
       echo -e "  ${name}: ${GREEN}${LATEST_TAG}${NC}"
     fi
   fi

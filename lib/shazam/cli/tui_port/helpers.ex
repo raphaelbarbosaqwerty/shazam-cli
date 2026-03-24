@@ -137,11 +137,11 @@ defmodule Shazam.CLI.TuiPort.Helpers do
     end
 
     cond do
-      sibling_path && File.exists?(sibling_path) -> sibling_path
-      priv_path && File.exists?(priv_path) -> priv_path
-      burrito_path && File.exists?(burrito_path) -> burrito_path
-      File.exists?(project_path) -> Path.expand(project_path)
-      File.exists?(dev_build_path) -> Path.expand(dev_build_path)
+      sibling_path && File.regular?(sibling_path) -> sibling_path
+      priv_path && File.regular?(priv_path) -> priv_path
+      burrito_path && File.regular?(burrito_path) -> burrito_path
+      File.regular?(project_path) -> Path.expand(project_path)
+      File.regular?(dev_build_path) -> Path.expand(dev_build_path)
       system_path -> system_path
       true -> nil
     end

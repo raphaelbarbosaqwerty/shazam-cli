@@ -23,17 +23,6 @@ defmodule Shazam.CLI.TuiPort do
         System.halt(1)
 
       path ->
-        # Quick sanity check — verify binary runs at all
-        case System.cmd(path, ["--check"], stderr_to_stdout: true) do
-          {output, 0} ->
-            unless String.contains?(output, "ok") do
-              IO.puts("Warning: shazam-tui --check returned unexpected output: #{String.slice(output, 0..100)}")
-            end
-          {output, code} ->
-            IO.puts("Error: shazam-tui failed to start (exit #{code}): #{String.slice(output, 0..200)}")
-            System.halt(1)
-        end
-
         # nouse_stdio: child keeps stdin/stdout for terminal (ratatui),
         # uses fd 3/4 for JSON protocol with Elixir
         port = Port.open({:spawn_executable, path}, [
