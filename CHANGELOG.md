@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.1.0 (2026-03-24)
+
+### Features
+- `/restart` command — stop all agents and re-init
+- `/github sync` — re-import tasks from GitHub Projects without restarting
+- `/plugin install <owner>/<repo>` — install plugins directly from GitHub
+- `/plugin remove <name>` — remove installed plugins
+- TUI horizontal scroll — input no longer freezes with long text
+- Workspace `include:` field (renamed from `domains:` in workspace, backward compatible)
+
+### Core v0.2.0
+- `excluded_paths` in domain config
+- Dashboard advanced metrics (`Metrics.get_dashboard_stats/0`)
+- QA real test generation (`QAManager.generate_test_task/1`)
+- Plugin name matching normalized (github_projects matches GitHubProjects)
+- Example plugins: GitHub Projects, JSON Logger, Secrets Obfuscation
+
 ## v1.0.0 (2026-03-23)
 
 ### Breaking Changes

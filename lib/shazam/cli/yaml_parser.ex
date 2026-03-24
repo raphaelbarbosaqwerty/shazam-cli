@@ -23,7 +23,7 @@ defmodule Shazam.CLI.YamlParser do
     workspaces = Enum.reduce(workspaces_raw, %{}, fn {name, config}, acc ->
       Map.put(acc, name, %{
         path: config["path"],
-        domains: config["domains"] || []
+        domains: config["include"] || config["domains"] || []
       })
     end)
 
@@ -101,7 +101,14 @@ defmodule Shazam.CLI.YamlParser do
   defp build_domain_config(domains) do
     domains
     |> Enum.reduce(%{}, fn {name, config}, acc ->
-      Map.put(acc, name, %{"allowed_paths" => config["paths"] || []})
+      domain_cfg = %{"allowed_paths" => config["paths"] || []}
+      domain_cfg = case config["excluded_paths"] do
+        excluded when is_list(excluded) and excluded != [] ->
+          Map.put(domain_cfg, "excluded_paths", excluded)
+        _ ->
+          domain_cfg
+      end
+      Map.put(acc, name, domain_cfg)
     end)
   end
 
@@ -298,11 +305,11 @@ defmodule Shazam.CLI.YamlParser do
       ws_lines = config.workspaces
         |> Enum.map(fn {name, ws} ->
           path = ws[:path] || ws["path"] || ""
-          domains_list = ws[:domains] || ws["domains"] || []
+          domains_list = ws[:domains] || ws["domains"] || ws[:include] || ws["include"] || []
           lines = ["  #{name}:", "    path: #{quote_str(path)}"]
           lines = if domains_list != [] do
             dl = domains_list |> Enum.map(&"      - #{quote_str(&1)}") |> Enum.join("\n")
-            lines ++ ["    domains:\n#{dl}"]
+            lines ++ ["    include:\n#{dl}"]
           else
             lines
           end

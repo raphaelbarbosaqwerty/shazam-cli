@@ -14,16 +14,8 @@ use crate::state::{AppState, Attachment, EventColor, EventLine, View};
 pub fn draw(f: &mut Frame, state: &AppState) {
     let size = f.area();
 
-    // Calculate input height based on content width
-    let prompt_width: u16 = 8; // "shazam❯ "
-    let input_display_width: u16 = state.input.chars()
-        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1) as u16)
-        .sum();
-    // Ghost text should NOT affect input area height — only typed text + prompt matter
-    let total_input_width = prompt_width + input_display_width;
-    let usable_width = size.width.max(1);
-    let input_lines = ((total_input_width as f32) / (usable_width as f32)).ceil().max(1.0) as u16;
-    let input_height = input_lines.min(6); // Cap at 6 lines
+    // Fixed single-line input with horizontal scrolling (no wrapping)
+    let input_height: u16 = 1;
 
     // Main layout: [events | status_bar | separator | input]
     let chunks = Layout::default()
@@ -281,47 +273,90 @@ fn draw_separator(f: &mut Frame, area: Rect) {
 }
 
 fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
-    let prompt = Span::styled(
-        "shazam❯ ",
+    let prompt_str = "shazam❯ ";
+    let prompt_w: usize = 8; // display width of "shazam❯ "
+
+    // ── Horizontal scrolling ───────────────────────────────────────
+    // Show a single-line window of text around the cursor position.
+    let input_chars: Vec<char> = state.input.chars().collect();
+    let visible_width = (area.width as usize).saturating_sub(prompt_w);
+    let cursor = state.cursor_pos;
+
+    let (scroll_offset, visible_chars) = if input_chars.len() <= visible_width {
+        (0, input_chars.clone())
+    } else {
+        // Keep cursor 5 chars from the right edge when scrolling right
+        let margin = 5.min(visible_width.saturating_sub(1));
+        let start = if cursor > visible_width.saturating_sub(margin) {
+            cursor.saturating_sub(visible_width.saturating_sub(margin))
+        } else {
+            0
+        };
+        let end = (start + visible_width).min(input_chars.len());
+        (start, input_chars[start..end].to_vec())
+    };
+
+    let visible_text: String = visible_chars.iter().collect();
+
+    // ── Build spans ────────────────────────────────────────────────
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Prompt
+    spans.push(Span::styled(
+        prompt_str,
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-    );
+    ));
 
-    // Highlight @mentions in cyan
-    let mut input_spans = vec![prompt];
-    let mut remaining = state.input.as_str();
+    // Scroll indicator when text is hidden to the left
+    if scroll_offset > 0 {
+        spans.push(Span::styled(
+            "\u{2190}",  // ←
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    // Highlight @mentions in the visible slice
+    let display_str = if scroll_offset > 0 {
+        // After the ← indicator, show text starting 1 char later to keep width
+        let trimmed: String = visible_chars.iter().skip(1).collect();
+        trimmed
+    } else {
+        visible_text.clone()
+    };
+
+    let mut remaining = display_str.as_str();
     while let Some(at_pos) = remaining.find('@') {
         if at_pos > 0 {
-            input_spans.push(Span::raw(remaining[..at_pos].to_string()));
+            spans.push(Span::raw(remaining[..at_pos].to_string()));
         }
-        // Find end of @mention (space or end of string)
         let after_at = &remaining[at_pos + 1..];
         let end = after_at.find(|c: char| c.is_whitespace()).unwrap_or(after_at.len());
         let mention = &remaining[at_pos..at_pos + 1 + end];
-        input_spans.push(Span::styled(mention.to_string(), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(
+            mention.to_string(),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ));
         remaining = &remaining[at_pos + 1 + end..];
     }
     if !remaining.is_empty() {
-        input_spans.push(Span::raw(remaining.to_string()));
+        spans.push(Span::raw(remaining.to_string()));
     }
-    let mut spans = input_spans;
 
-    // Ghost text (completable part) — included in wrapping spans
-    // Hint (display-only description) — kept separate, appended to last line only
-    let mut hint_span: Option<Span> = None;
-    if state.cursor_pos == state.input.chars().count() {
+    // Ghost text + hint (only when cursor is at end and text is not scrolled past view)
+    let char_count = input_chars.len();
+    if state.cursor_pos == char_count {
         if !state.ghost_text.is_empty() {
             spans.push(Span::styled(
                 &state.ghost_text,
                 Style::default().fg(Color::DarkGray),
             ));
         }
-        // Show command hint after completion or exact match
         let full = format!("{}{}", &state.input, &state.ghost_text);
         let hint = crate::command_hint(&full);
         if !hint.is_empty() {
-            hint_span = Some(Span::styled(
+            spans.push(Span::styled(
                 hint,
                 Style::default().fg(Color::Rgb(80, 80, 100)),
             ));
@@ -352,67 +387,17 @@ fn draw_input(f: &mut Frame, area: Rect, state: &AppState) {
         }
     }
 
-    // Build the full display string for manual line splitting
-    let prompt_str = "shazam❯ ";
-    let mut full_text = String::from(prompt_str);
-    full_text.push_str(&state.input);
-    if !state.ghost_text.is_empty() && state.cursor_pos == state.input.chars().count() {
-        full_text.push_str(&state.ghost_text);
-    }
-
-    // Split into visual lines manually (character-level, no word wrap)
-    let line_width = area.width.max(1) as usize;
-    let mut visual_lines: Vec<Vec<Span>> = Vec::new();
-    let mut current_line: Vec<Span> = Vec::new();
-    let mut current_width: usize = 0;
-
-    for span in &spans {
-        let span_content = span.content.as_ref();
-        let mut chunk = String::new();
-
-        for ch in span_content.chars() {
-            let ch_w = UnicodeWidthChar::width(ch).unwrap_or(1);
-            if current_width + ch_w > line_width {
-                if !chunk.is_empty() {
-                    current_line.push(Span::styled(chunk.clone(), span.style));
-                    chunk.clear();
-                }
-                visual_lines.push(std::mem::take(&mut current_line));
-                current_width = 0;
-            }
-            chunk.push(ch);
-            current_width += ch_w;
-        }
-        if !chunk.is_empty() {
-            current_line.push(Span::styled(chunk, span.style));
-        }
-    }
-    if !current_line.is_empty() {
-        visual_lines.push(current_line);
-    }
-
-    // Append hint to the last visual line only (does not affect wrapping)
-    if let Some(hint) = hint_span {
-        if let Some(last) = visual_lines.last_mut() {
-            last.push(hint);
-        }
-    }
-
-    let lines: Vec<Line> = visual_lines.into_iter().map(Line::from).collect();
-    let input_paragraph = Paragraph::new(lines);
+    let line = Line::from(spans);
+    let input_paragraph = Paragraph::new(line);
     f.render_widget(input_paragraph, area);
 
-    // Position cursor
-    let prompt_w: u16 = 8;
-    let display_width: u16 = state.input.chars()
-        .take(state.cursor_pos)
-        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1) as u16)
-        .sum();
-    let total_offset = prompt_w + display_width;
-    let lw = area.width.max(1);
-    let cursor_y = area.y + (total_offset / lw);
-    let cursor_x = area.x + (total_offset % lw);
-    let cursor_y = cursor_y.min(area.y + area.height.saturating_sub(1));
+    // ── Position cursor ────────────────────────────────────────────
+    // cursor_pos within visible window, accounting for scroll indicator
+    let indicator_offset: u16 = if scroll_offset > 0 { 1 } else { 0 };
+    let cursor_in_view = (cursor - scroll_offset) as u16;
+    let cursor_x = area.x + prompt_w as u16 + indicator_offset + cursor_in_view.saturating_sub(if scroll_offset > 0 { 1 } else { 0 });
+    let cursor_x = cursor_x.min(area.x + area.width.saturating_sub(1));
+    let cursor_y = area.y;
     f.set_cursor_position((cursor_x, cursor_y));
 }
 

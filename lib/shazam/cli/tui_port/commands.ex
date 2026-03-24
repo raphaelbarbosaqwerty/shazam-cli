@@ -22,6 +22,10 @@ defmodule Shazam.CLI.TuiPort.Commands do
   def handle_command("/memory" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/health" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/workspaces" = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/restart" <> _ = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/github sync" = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugin install " <> _ = cmd, state), do: System.handle_command(cmd, state)
+  def handle_command("/plugin remove " <> _ = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/plugins reload" = cmd, state), do: System.handle_command(cmd, state)
   def handle_command("/plugins" = cmd, state), do: System.handle_command(cmd, state)
 

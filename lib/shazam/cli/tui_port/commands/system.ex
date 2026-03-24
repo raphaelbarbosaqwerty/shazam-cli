@@ -1,7 +1,8 @@
 defmodule Shazam.CLI.TuiPort.Commands.System do
   @moduledoc """
   System commands: /quit, /exit, /help, /start, /stop, /pause, /resume,
-  /dashboard, /status, /config, /clear, /memory, /workspaces
+  /restart, /dashboard, /status, /config, /clear, /memory, /workspaces,
+  /github sync
   """
 
   alias Shazam.CLI.TuiPort.{Helpers, Status}
@@ -88,7 +89,13 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       "Plugins:",
       "/plugins             — List loaded plugins",
       "/plugins reload      — Reload plugins from .shazam/plugins/",
+      "/plugin install <owner>/<repo>         — Install plugin from GitHub repo",
+      "/plugin install <owner>/<repo> --path <file> — Install specific file from repo",
+      "/plugin remove <name>                  — Remove a plugin",
       "",
+      "/restart            — Restart Shazam (stop all agents + re-init)",
+      "/restart -f         — Force restart (same behavior, explicit flag)",
+      "/github sync        — Re-import from GitHub Projects without restarting",
       "/exit               — Exit Shazam",
       "",
       "Tips:",
@@ -183,7 +190,14 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
         {:ok, 0} -> :ok
         {:ok, n} ->
           Helpers.send_event(state.port, "system", "info", "#{n} plugin(s) loaded")
-          Shazam.PluginManager.run_pipeline(:on_init, nil, company_name: company_name)
+          case Shazam.PluginManager.run_pipeline(:on_init, nil, company_name: company_name) do
+            {:ok, _} -> :ok
+            {:halt, reason} ->
+              Helpers.send_event(state.port, "system", "error", "Plugin on_init halted: #{inspect(reason)}")
+            _ -> :ok
+          end
+          # Show plugin log messages
+          show_plugin_log(state)
         _ -> :ok
       end
     catch
@@ -332,6 +346,85 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     state
   end
 
+  def handle_command("/plugin install " <> args, state) do
+    {repo, opts} = parse_plugin_install_args(args)
+
+    if repo == "" do
+      Helpers.send_event(state.port, "system", "error", "Usage: /plugin install <owner>/<repo> [--path path/to/file.ex]")
+      state
+    else
+      Helpers.send_event(state.port, "system", "info", "Installing plugin from #{repo}...")
+
+      workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+      plugins_dir = Path.join(workspace, ".shazam/plugins")
+      File.mkdir_p!(plugins_dir)
+      tmp_dir = Path.join(System.tmp_dir!(), "shazam-plugin-#{:erlang.system_time(:millisecond)}")
+
+      case System.cmd("gh", ["repo", "clone", repo, tmp_dir], stderr_to_stdout: true) do
+        {_, 0} ->
+          files = case opts[:path] do
+            nil ->
+              # Find all .ex files in the cloned repo
+              Path.wildcard(Path.join(tmp_dir, "**/*.ex"))
+            specific_path ->
+              full = Path.join(tmp_dir, specific_path)
+              if File.exists?(full), do: [full], else: []
+          end
+
+          if files == [] do
+            Helpers.send_event(state.port, "system", "error", "No .ex files found#{if opts[:path], do: " at #{opts[:path]}", else: ""}")
+          else
+            installed = Enum.map(files, fn src ->
+              dest_name = Path.basename(src)
+              dest = Path.join(plugins_dir, dest_name)
+              File.cp!(src, dest)
+              dest_name
+            end)
+
+            # Reload plugins
+            Shazam.PluginManager.reload()
+
+            Helpers.send_event(state.port, "system", "info", "Installed #{length(installed)} plugin(s):")
+            Enum.each(installed, fn name ->
+              Helpers.send_event(state.port, "system", "info", "  + #{name}")
+            end)
+          end
+
+          # Clean up temp dir
+          File.rm_rf!(tmp_dir)
+
+        {output, _code} ->
+          Helpers.send_event(state.port, "system", "error", "Failed to clone #{repo}: #{String.slice(output, 0..200)}")
+          File.rm_rf(tmp_dir)
+      end
+
+      state
+    end
+  end
+
+  def handle_command("/plugin remove " <> name, state) do
+    name = String.trim(name)
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    plugins_dir = Path.join(workspace, ".shazam/plugins")
+
+    # Try exact match first, then with .ex extension
+    candidates = [
+      Path.join(plugins_dir, name),
+      Path.join(plugins_dir, "#{name}.ex")
+    ]
+
+    case Enum.find(candidates, &File.exists?/1) do
+      nil ->
+        Helpers.send_event(state.port, "system", "error", "Plugin '#{name}' not found in .shazam/plugins/")
+      path ->
+        File.rm!(path)
+        Shazam.PluginManager.reload()
+        Helpers.send_event(state.port, "system", "info", "Removed plugin: #{Path.basename(path)}")
+    end
+
+    state
+  end
+
   def handle_command("/plugins reload", state) do
     case Shazam.PluginManager.reload() do
       {:ok, n} ->
@@ -359,6 +452,55 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
       Helpers.send_event(state.port, "system", "info", "")
       Helpers.send_event(state.port, "system", "info", "Available events: on_init, before_task_create, after_task_create, before_task_complete, after_task_complete, before_query, after_query, on_tool_use")
     end
+    state
+  end
+
+  def handle_command("/workspaces", state) do
+    workspaces = Application.get_env(:shazam, :workspaces, %{})
+    if workspaces == %{} do
+      Helpers.send_event(state.port, "system", "info", "No workspaces configured. Add a 'workspaces' section to shazam.yaml")
+    else
+      Enum.each(workspaces, fn {name, config} ->
+        path = Map.get(config, :path) || Map.get(config, "path", "")
+        exists = if File.dir?(path), do: "✓", else: "✗"
+        Helpers.send_event(state.port, "system", "info", "  #{exists} #{name}: #{path}")
+      end)
+    end
+    state
+  end
+
+  def handle_command("/restart" <> rest, state) do
+    _force = String.contains?(rest, "-f")
+
+    Helpers.send_event(state.port, "system", "info", "Restarting Shazam...")
+
+    # Stop all running tasks
+    company_name = state.company[:name] || state.company.name
+    try do
+      Shazam.RalphLoop.pause(company_name)
+    catch
+      _, _ -> :ok
+    end
+
+    # Re-run /start
+    handle_command("/start", state)
+  end
+
+  def handle_command("/github sync", state) do
+    company_name = state.company[:name] || state.company.name
+
+    Helpers.send_event(state.port, "system", "info", "Syncing from GitHub...")
+
+    # Re-run plugin on_init to sync from GitHub
+    try do
+      Shazam.PluginManager.run_pipeline(:on_init, nil, company_name: company_name)
+      # Show plugin log
+      show_plugin_log(state)
+    catch
+      _, _ ->
+        Helpers.send_event(state.port, "system", "error", "GitHub sync failed")
+    end
+
     state
   end
 
@@ -477,18 +619,30 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
     state
   end
 
-  def handle_command("/workspaces", state) do
-    workspaces = Application.get_env(:shazam, :workspaces, %{})
-    if workspaces == %{} do
-      Helpers.send_event(state.port, "system", "info", "No workspaces configured. Add a 'workspaces' section to shazam.yaml")
-    else
-      Enum.each(workspaces, fn {name, config} ->
-        path = Map.get(config, :path) || Map.get(config, "path", "")
-        exists = if File.dir?(path), do: "✓", else: "✗"
-        Helpers.send_event(state.port, "system", "info", "  #{exists} #{name}: #{path}")
-      end)
+  # ── Private helpers ────────────────────────────────────────
+
+  defp parse_plugin_install_args(args) do
+    parts = String.split(String.trim(args))
+    case parts do
+      [repo, "--path", path | _] -> {repo, [path: path]}
+      [repo | _] -> {repo, []}
+      [] -> {"", []}
     end
-    state
+  end
+
+  defp show_plugin_log(state) do
+    log_path = "/tmp/shazam-plugin.log"
+    case File.read(log_path) do
+      {:ok, content} when content != "" ->
+        content
+        |> String.split("\n")
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.each(fn line ->
+          Helpers.send_event(state.port, "plugin", "info", line)
+        end)
+        File.write(log_path, "")
+      _ -> :ok
+    end
   end
 
   # ── RalphLoop safety helpers ──────────────────────────────
