@@ -55,7 +55,7 @@ defmodule Shazam.CLI.TuiPort do
         # Send welcome event
         try do
           Helpers.send_event(port, "system", "info",
-            "Welcome to #{company_state[:name] || "Shazam"}. Type /start to boot agents, /help for commands.")
+            "Welcome to #{company_state[:name] || "Shazam"}. Starting agents... Type /help for commands.")
         catch
           _, _ -> :ok
         end
@@ -90,6 +90,15 @@ defmodule Shazam.CLI.TuiPort do
             catch
               _, _ -> :ok
             end
+
+            # Auto-start agents (no need to type /start manually)
+            state = try do
+              Commands.handle_command("/start", state)
+            catch
+              _, _ -> state
+            end
+
+            state
         end
 
         # Enter event loop
