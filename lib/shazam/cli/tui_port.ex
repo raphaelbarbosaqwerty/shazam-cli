@@ -42,12 +42,23 @@ defmodule Shazam.CLI.TuiPort do
           image_store: %{}
         }
 
+        # Give TUI binary time to initialize before sending data
+        Process.sleep(100)
+
         # Send initial status
-        Status.send_status(state)
+        try do
+          Status.send_status(state)
+        catch
+          _, _ -> :ok
+        end
 
         # Send welcome event
-        Helpers.send_event(port, "system", "info",
-          "Welcome to #{company_state[:name] || "Shazam"}. Type /start to boot agents, /help for commands.")
+        try do
+          Helpers.send_event(port, "system", "info",
+            "Welcome to #{company_state[:name] || "Shazam"}. Type /start to boot agents, /help for commands.")
+        catch
+          _, _ -> :ok
+        end
 
         # Subscribe to EventBus if available
         if Code.ensure_loaded?(Shazam.API.EventBus) do
