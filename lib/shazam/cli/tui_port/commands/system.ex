@@ -627,7 +627,8 @@ defmodule Shazam.CLI.TuiPort.Commands.System do
   end
 
   defp show_plugin_log(state) do
-    log_path = "/tmp/shazam-plugin.log"
+    workspace = Application.get_env(:shazam, :workspace, File.cwd!())
+    log_path = Path.join([workspace, ".shazam", "logs", "plugin.log"])
     case File.read(log_path) do
       {:ok, content} when content != "" ->
         content
