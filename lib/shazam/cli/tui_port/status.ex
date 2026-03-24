@@ -83,18 +83,20 @@ defmodule Shazam.CLI.TuiPort.Status do
   def get_agent_counts(state) do
     agents = Helpers.deep_get(state, [:company, :agents]) || []
     total = length(agents)
-    # Count agents with active sessions from metrics
-    active = if Code.ensure_loaded?(Shazam.Metrics) do
-      agents
-      |> Enum.count(fn a ->
-        name = a[:name] || a.name
-        case Shazam.Metrics.get_agent(name) do
-          %{status: s} when s in ["working", "thinking"] -> true
-          _ -> false
+    # Count active agents from RalphLoop running tasks (most reliable source)
+    company_name = Helpers.deep_get(state, [:company, :name]) || ""
+    active = try do
+      if Code.ensure_loaded?(Shazam.RalphLoop) and Shazam.RalphLoop.exists?(company_name) do
+        case Shazam.RalphLoop.status(company_name) do
+          %{running_count: n} when is_integer(n) -> n
+          %{running_tasks: tasks} when is_list(tasks) -> length(tasks)
+          _ -> 0
         end
-      end)
-    else
-      0
+      else
+        0
+      end
+    catch
+      _, _ -> 0
     end
     {total, active}
   catch
