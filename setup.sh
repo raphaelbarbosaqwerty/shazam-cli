@@ -130,7 +130,10 @@ else
   echo -e "        ${GREEN}✓${NC} shazam-tui built"
 
   echo "  [3/4] Building Elixir escript..."
-  mix escript.build 2>&1 | head -5
+  if ! mix escript.build 2>&1; then
+    echo -e "        ${RED}✗ Elixir escript build failed${NC}"
+    exit 1
+  fi
   echo -e "        ${GREEN}✓${NC} shazam-cli built"
 
   echo "  [4/4] Installing..."
