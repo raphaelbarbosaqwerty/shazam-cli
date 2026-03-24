@@ -149,7 +149,22 @@ fi
 # ── PATH check ─────────────────────────────────────────────
 
 echo ""
+
+# Check both current PATH and shell rc files
+PATH_OK=false
 if echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
+  PATH_OK=true
+fi
+
+# Also check if rc file already has the export
+RC_FILE="$HOME/.zshrc"
+[ -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.zshrc" ] && RC_FILE="$HOME/.bashrc"
+
+if [ -f "$RC_FILE" ] && grep -q 'HOME/bin' "$RC_FILE" 2>/dev/null; then
+  PATH_OK=true
+fi
+
+if [ "$PATH_OK" = true ]; then
   echo -e "${GREEN}✓${NC} ${INSTALL_DIR} is in your PATH"
 else
   echo ""
@@ -158,10 +173,9 @@ else
   echo -e "${RED}║                                                              ║${NC}"
   echo -e "${RED}║  ${NC}Run this command now:${RED}                                        ║${NC}"
   echo -e "${RED}║                                                              ║${NC}"
-  echo -e "${RED}║  ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ~/.zshrc${NC}${RED}             ║${NC}"
-  echo -e "${RED}║  ${GREEN}source ~/.zshrc${NC}${RED}                                                ║${NC}"
+  echo -e "${RED}║  ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ${RC_FILE}${NC}${RED}${NC}"
+  echo -e "${RED}║  ${GREEN}source ${RC_FILE}${NC}"
   echo -e "${RED}║                                                              ║${NC}"
-  echo -e "${RED}║  ${DIM}(use ~/.bashrc if you use bash instead of zsh)${NC}${RED}              ║${NC}"
   echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
   echo ""
 fi
