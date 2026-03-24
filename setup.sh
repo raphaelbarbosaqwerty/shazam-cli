@@ -171,13 +171,14 @@ fi
 if [ "$PATH_OK" = true ]; then
   echo -e "${GREEN}✓${NC} ~/bin is in your PATH"
 else
+  RC_SHORT="${RC_FILE/#$HOME/\~}"
   echo ""
   echo -e "${YELLOW}⚠  ~/bin is not in your PATH${NC}"
   echo ""
   echo -e "  Run these commands to fix:"
   echo ""
-  echo -e "    ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ${RC_FILE}${NC}"
-  echo -e "    ${GREEN}source ${RC_FILE}${NC}"
+  echo -e "    ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ${RC_SHORT}${NC}"
+  echo -e "    ${GREEN}source ${RC_SHORT}${NC}"
   echo ""
 fi
 
