@@ -159,17 +159,12 @@ fi
 
 echo ""
 
-# Check both current PATH and shell rc files
-PATH_OK=false
-if echo "$PATH" | tr ':' '\n' | grep -q "^${INSTALL_DIR}$"; then
-  PATH_OK=true
-fi
-
-# Also check if rc file already has the export
+# Check if ~/bin is PERMANENTLY in PATH (shell rc file, not current session)
 RC_FILE="$HOME/.zshrc"
 [ -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.zshrc" ] && RC_FILE="$HOME/.bashrc"
 
-if [ -f "$RC_FILE" ] && grep -q 'HOME/bin' "$RC_FILE" 2>/dev/null; then
+PATH_OK=false
+if [ -f "$RC_FILE" ] && grep -qE '(HOME/bin|~/bin)' "$RC_FILE" 2>/dev/null; then
   PATH_OK=true
 fi
 
