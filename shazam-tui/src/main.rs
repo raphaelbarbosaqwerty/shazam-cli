@@ -26,7 +26,27 @@ enum AppEvent {
     ElixirClosed,
 }
 
-fn main() -> io::Result<()> {
+fn main() {
+    // Log any fatal errors so they can be diagnosed
+    std::panic::set_hook(Box::new(|info| {
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/shazam-tui.log") {
+            let _ = writeln!(f, "PANIC: {}", info);
+        }
+    }));
+
+    if let Err(e) = real_main() {
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/tmp/shazam-tui.log") {
+            let _ = writeln!(f, "FATAL: {}", e);
+        }
+        // Try to restore terminal before exiting
+        let _ = terminal::disable_raw_mode();
+        let mut stdout = io::stdout();
+        let _ = execute!(stdout, LeaveAlternateScreen, DisableBracketedPaste, DisableMouseCapture);
+        std::process::exit(1);
+    }
+}
+
+fn real_main() -> io::Result<()> {
     // With Erlang's nouse_stdio:
     //   fd 0 (stdin)  = terminal (free for crossterm input)
     //   fd 1 (stdout) = terminal (free for ratatui output)

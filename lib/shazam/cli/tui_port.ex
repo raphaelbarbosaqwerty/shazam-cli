@@ -69,11 +69,27 @@ defmodule Shazam.CLI.TuiPort do
           end
         end
 
-        # Send initial status (port may still be initializing)
-        try do
-          Status.send_status(state)
-        catch
-          _, _ -> :ok
+        # Verify TUI is still alive before entering loop
+        Process.sleep(100)
+        case Port.info(port) do
+          nil ->
+            # TUI died during startup — check log
+            log_hint = case File.read("/tmp/shazam-tui.log") do
+              {:ok, content} ->
+                last_lines = content |> String.split("\n") |> Enum.reject(&(&1 == "")) |> Enum.take(-3) |> Enum.join("\n")
+                "\n  Log: #{last_lines}"
+              _ -> ""
+            end
+            IO.puts("\nError: shazam-tui exited immediately.#{log_hint}")
+            IO.puts("  Try running: ~/.shazam-install/shazam-cli/shazam-tui/target/release/shazam-tui")
+            System.halt(1)
+          _ ->
+            # Send initial status
+            try do
+              Status.send_status(state)
+            catch
+              _, _ -> :ok
+            end
         end
 
         # Enter event loop
@@ -110,7 +126,10 @@ defmodule Shazam.CLI.TuiPort do
           end
 
         # Port closed (TUI exited)
-        {port, {:exit_status, _code}} when port == state.port ->
+        {port, {:exit_status, code}} when port == state.port ->
+          if code != 0 do
+            IO.puts("\nshazam-tui exited with code #{code}. Check /tmp/shazam-tui.log for details.")
+          end
           Helpers.shutdown(state)
 
         # EventBus events from agents/ralph
