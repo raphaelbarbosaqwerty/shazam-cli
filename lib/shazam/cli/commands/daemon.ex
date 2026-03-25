@@ -117,8 +117,22 @@ defmodule Shazam.CLI.Commands.Daemon do
 
     # Start Elixir in background using nohup + shell
     # --erl "-detached" passes the detached flag to the Erlang VM
+    home = System.get_env("HOME") || "~"
+    current_path = System.get_env("PATH") || ""
+    full_path = [
+      "#{home}/.local/bin",
+      "#{home}/bin",
+      "#{home}/.cargo/bin",
+      "#{home}/.asdf/shims",
+      "#{home}/.mise/shims",
+      "/usr/local/bin",
+      "/opt/homebrew/bin",
+      current_path
+    ] |> Enum.join(":")
+
     cmd = """
     cd #{core_dir} && \
+    export PATH="#{full_path}" && \
     SHAZAM_DAEMON=true \
     SHAZAM_PORT=#{@daemon_port} \
     nohup elixir --erl "-detached" -S mix run --no-halt \
