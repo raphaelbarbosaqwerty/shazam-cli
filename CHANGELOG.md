@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.0.0 (2026-03-24)
+
+### Features
+- **Daemon mode** — persistent backend that keeps agents running when TUI closes
+  - `shazam daemon start` — start the backend as a background service
+  - `shazam daemon stop` — stop the daemon
+  - `shazam daemon status` — show daemon health, uptime, memory, active projects
+  - `shazam daemon restart` — restart the daemon
+  - Multiple projects connect to the same daemon simultaneously
+- **WebSocket TUI transport** — TUI Rust binary supports `--ws` flag for daemon connection
+  - Uses `TcpStream::try_clone()` for lock-free read/write split (no Mutex, no timeout hacks)
+  - Auto-detects daemon on startup: if running → WebSocket mode, if not → inline mode (backwards compatible)
+  - Same protocol as fd 3/4 pipes — zero changes to TUI rendering or input handling
+- **Auto-start agents** — agents boot automatically when TUI opens (no need to type `/start`)
+- **shazam-tray integration** — setup.sh now builds and installs the menu bar app
+- **Paste expansion in /plan** — `[Paste #1]` tokens now expand in plan descriptions
+- **GitHub URL fixed** — help now shows correct `ShazamAI/shazam-cli` URL
+- **TUI version updated** — animation shows current version
+
+### Bug Fixes
+- **setup.sh escript build killed by SIGPIPE** — removed `head -5` pipe
+- **TUI binary search picked directory** — `File.exists?` → `File.regular?`
+- **shazam update path wrong** — now checks `~/.shazam-install/` layout
+- **PORT auto-increment** — inline mode uses port 4041 if daemon occupies 4040
+- **PATH warning not showing** — checks shell rc file, not current session
+- **FileLogger compile-time path** — runtime `log_dir()` function
+- **Port.command crash on TUI exit** — `rescue ArgumentError`
+- **setup.sh git checkout fails silently** — `reset --hard` + `clean -fd` before checkout
+
 ## v1.1.6 (2026-03-24)
 
 ### Bug Fixes

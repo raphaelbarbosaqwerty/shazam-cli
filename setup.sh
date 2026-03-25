@@ -3,10 +3,12 @@ set -euo pipefail
 
 CORE_REPO="https://github.com/ShazamAI/shazam-core.git"
 CLI_REPO="https://github.com/raphaelbarbosaqwerty/shazam-cli.git"
+TRAY_REPO="https://github.com/ShazamAI/shazam-tray.git"
 INSTALL_DIR="${HOME}/bin"
 SHAZAM_HOME="${HOME}/.shazam-install"
 CORE_DIR="${SHAZAM_HOME}/shazam-core"
 CLI_DIR="${SHAZAM_HOME}/shazam-cli"
+TRAY_DIR="${SHAZAM_HOME}/shazam-tray"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -65,6 +67,7 @@ clone_or_update() {
 mkdir -p "$SHAZAM_HOME"
 clone_or_update "$CORE_REPO" "$CORE_DIR" "shazam-core"
 clone_or_update "$CLI_REPO" "$CLI_DIR" "shazam-cli"
+clone_or_update "$TRAY_REPO" "$TRAY_DIR" "shazam-tray"
 
 echo ""
 
@@ -126,7 +129,7 @@ else
   mix local.rebar --force --if-missing > /dev/null 2>&1
   mix deps.get --quiet 2>&1
 
-  echo "  [2/4] Building Rust TUI..."
+  echo "  [2/5] Building Rust TUI..."
   cd shazam-tui
   if ! cargo build --release 2>&1; then
     echo -e "        ${RED}✗ Rust TUI build failed${NC}"
@@ -135,14 +138,23 @@ else
   cd ..
   echo -e "        ${GREEN}✓${NC} shazam-tui built"
 
-  echo "  [3/4] Building Elixir escript..."
+  echo "  [3/5] Building Rust Tray..."
+  cd "$TRAY_DIR"
+  if cargo build --release 2>&1; then
+    echo -e "        ${GREEN}✓${NC} shazam-tray built"
+  else
+    echo -e "        ${YELLOW}⚠${NC} shazam-tray build failed (optional)"
+  fi
+  cd "$CLI_DIR"
+
+  echo "  [4/5] Building Elixir escript..."
   if ! mix escript.build 2>&1; then
     echo -e "        ${RED}✗ Elixir escript build failed${NC}"
     exit 1
   fi
   echo -e "        ${GREEN}✓${NC} shazam-cli built"
 
-  echo "  [4/4] Installing..."
+  echo "  [5/5] Installing..."
   mkdir -p "$INSTALL_DIR"
 
   cp shazam-cli "$INSTALL_DIR/shazam-cli"
@@ -150,6 +162,12 @@ else
 
   cp "shazam-tui/target/release/shazam-tui" "$INSTALL_DIR/shazam-tui"
   chmod +x "$INSTALL_DIR/shazam-tui"
+
+  # Install tray if built successfully
+  if [ -f "$TRAY_DIR/target/release/shazam-tray" ]; then
+    cp "$TRAY_DIR/target/release/shazam-tray" "$INSTALL_DIR/shazam-tray"
+    chmod +x "$INSTALL_DIR/shazam-tray"
+  fi
 
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam"
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shz"
@@ -190,10 +208,11 @@ echo -e "    ${GREEN}~/.shazam-install/shazam-core${NC}  — backend engine"
 echo -e "    ${GREEN}~/.shazam-install/shazam-cli${NC}   — CLI + TUI"
 echo ""
 echo "  Binaries (~/bin/):"
-echo -e "    ${GREEN}shazam-cli${NC}  — main binary"
-echo -e "    ${GREEN}shazam${NC}      — alias"
-echo -e "    ${GREEN}shz${NC}         — short alias"
-echo -e "    ${GREEN}shazam-tui${NC}  — Rust TUI"
+echo -e "    ${GREEN}shazam-cli${NC}   — main binary"
+echo -e "    ${GREEN}shazam${NC}       — alias"
+echo -e "    ${GREEN}shz${NC}          — short alias"
+echo -e "    ${GREEN}shazam-tui${NC}   — Rust TUI"
+echo -e "    ${GREEN}shazam-tray${NC}  — macOS menu bar app"
 echo ""
 echo "  Get started:"
 echo -e "    ${YELLOW}shazam init${NC}      Create a shazam.yaml config"

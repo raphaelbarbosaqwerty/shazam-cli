@@ -47,6 +47,7 @@ defmodule Shazam.CLI do
       ["-v" | _]             -> cmd_version()
       ["--version" | _]      -> cmd_version()
       ["update" | _]         -> cmd_update()
+      ["daemon" | rest]      -> Shazam.CLI.Commands.Daemon.run(rest)
       []                     -> cmd_default()
       [unknown | _] ->
         Formatter.error("Unknown command: #{unknown}")
@@ -239,6 +240,7 @@ defmodule Shazam.CLI do
         dashboard               Interactive TUI dashboard
         version                 Show version info
         update                  Check for updates
+        daemon start|stop|status Manage the background daemon
 
       #{IO.ANSI.bright()}OPTIONS#{IO.ANSI.reset()}
         --company, -c NAME      Target company (default: from shazam.yaml)
@@ -255,7 +257,7 @@ defmodule Shazam.CLI do
         shazam logs dev_senior
         shazam org
 
-      #{IO.ANSI.faint()}https://github.com/your-org/shazam#{IO.ANSI.reset()}
+      #{IO.ANSI.faint()}https://github.com/ShazamAI/shazam-cli#{IO.ANSI.reset()}
     """)
   end
 end

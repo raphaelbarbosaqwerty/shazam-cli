@@ -1,6 +1,7 @@
 mod protocol;
 mod state;
 mod ui;
+mod ws;
 
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Write};
@@ -8,6 +9,9 @@ use std::os::unix::io::FromRawFd;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+#[allow(unused_imports)]
+use tungstenite;
 
 use crossterm::{
     event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind},
@@ -62,27 +66,68 @@ fn tui_log(msg: &str) {
     }
 }
 
+/// Transport mode for communicating with the backend
+enum Transport {
+    /// fd 3/4 pipes from Erlang Port (inline OTP mode)
+    Port,
+    /// WebSocket to daemon (--ws mode)
+    WebSocket {
+        url: String,
+        subscribe_json: Option<String>,
+    },
+}
+
+/// Global WebSocket sender channel — used by send_to_elixir in daemon mode
+static WS_SENDER: std::sync::OnceLock<std::sync::Mutex<mpsc::Sender<ws::WsOutbound>>> = std::sync::OnceLock::new();
+
+fn parse_transport() -> Transport {
+    let args: Vec<String> = std::env::args().collect();
+    let mut ws_url = None;
+    let mut subscribe_json = None;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--ws" if i + 1 < args.len() => {
+                ws_url = Some(args[i + 1].clone());
+                i += 2;
+            }
+            "--subscribe" if i + 1 < args.len() => {
+                subscribe_json = Some(args[i + 1].clone());
+                i += 2;
+            }
+            _ => { i += 1; }
+        }
+    }
+    match ws_url {
+        Some(url) => Transport::WebSocket { url, subscribe_json },
+        None => Transport::Port,
+    }
+}
+
 fn real_main() -> io::Result<()> {
     tui_log("startup: begin");
 
-    // With Erlang's nouse_stdio:
-    //   fd 0 (stdin)  = terminal (free for crossterm input)
-    //   fd 1 (stdout) = terminal (free for ratatui output)
-    //   fd 3 = read from Elixir (Elixir Port.command writes here)
-    //   fd 4 = write to Elixir (Elixir receives as port data)
+    let transport = parse_transport();
 
-    // Verify fd 3 exists before proceeding
-    let fd3_ok = unsafe { libc::fcntl(3, libc::F_GETFD) } != -1;
-    let fd4_ok = unsafe { libc::fcntl(4, libc::F_GETFD) } != -1;
-    tui_log(&format!("startup: fd3={} fd4={}", fd3_ok, fd4_ok));
+    match &transport {
+        Transport::Port => {
+            // Verify fd 3/4 exist before proceeding
+            let fd3_ok = unsafe { libc::fcntl(3, libc::F_GETFD) } != -1;
+            let fd4_ok = unsafe { libc::fcntl(4, libc::F_GETFD) } != -1;
+            tui_log(&format!("startup: port mode fd3={} fd4={}", fd3_ok, fd4_ok));
 
-    if !fd3_ok || !fd4_ok {
-        tui_log("startup: fd3/fd4 not available — not launched from Elixir port?");
-        eprintln!("Error: shazam-tui must be launched from shazam (Elixir port with nouse_stdio)");
-        return Ok(());
+            if !fd3_ok || !fd4_ok {
+                tui_log("startup: fd3/fd4 not available");
+                eprintln!("Error: shazam-tui must be launched from shazam (Elixir port with nouse_stdio)");
+                return Ok(());
+            }
+        }
+        Transport::WebSocket { url, .. } => {
+            tui_log(&format!("startup: websocket mode → {}", url));
+        }
     }
 
-    // Set up terminal on stdout (which IS the terminal now)
+    // Set up terminal on stdout
     tui_log("startup: enabling raw mode");
     terminal::enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -109,45 +154,59 @@ fn real_main() -> io::Result<()> {
     // Channel for unified event handling
     let (tx, rx) = mpsc::channel::<AppEvent>();
 
-    // Thread 1: Read JSON from fd 3 (Elixir Port pipe)
+    // Thread 1: Read from backend (fd 3 or WebSocket)
     let tx_elixir = tx.clone();
-    thread::spawn(move || {
-        tui_log("fd3-reader: thread started");
-        // fd 3 = input from Elixir (nouse_stdio mode)
-        let elixir_in = unsafe { std::fs::File::from_raw_fd(3) };
-        let reader = BufReader::new(elixir_in);
-        let mut line_count = 0u32;
-        for line in reader.lines() {
-            match line {
-                Ok(json) => {
-                    line_count += 1;
-                    if line_count <= 3 {
-                        tui_log(&format!("fd3-reader: line {} len={}", line_count, json.len()));
-                    }
-                    if json.trim().is_empty() {
-                        continue;
-                    }
-                    match serde_json::from_str::<InboundMsg>(&json) {
-                        Ok(msg) => {
-                            if tx_elixir.send(AppEvent::Elixir(msg)).is_err() {
-                                tui_log("fd3-reader: channel closed, breaking");
-                                break;
+    match transport {
+        Transport::Port => {
+            thread::spawn(move || {
+                tui_log("fd3-reader: thread started");
+                let elixir_in = unsafe { std::fs::File::from_raw_fd(3) };
+                let reader = BufReader::new(elixir_in);
+                let mut line_count = 0u32;
+                for line in reader.lines() {
+                    match line {
+                        Ok(json) => {
+                            line_count += 1;
+                            if json.trim().is_empty() { continue; }
+                            match serde_json::from_str::<InboundMsg>(&json) {
+                                Ok(msg) => {
+                                    if tx_elixir.send(AppEvent::Elixir(msg)).is_err() { break; }
+                                }
+                                Err(_e) => {
+                                    tui_log(&format!("fd3-reader: parse error: {}", _e));
+                                }
                             }
                         }
-                        Err(_e) => {
-                            tui_log(&format!("fd3-reader: JSON parse error: {} — line: {}", _e, json));
+                        Err(e) => {
+                            tui_log(&format!("fd3-reader: read error: {}", e));
+                            break;
                         }
                     }
                 }
+                tui_log(&format!("fd3-reader: exiting after {} lines", line_count));
+                let _ = tx_elixir.send(AppEvent::ElixirClosed);
+            });
+        }
+        Transport::WebSocket { url, subscribe_json } => {
+            // Connect and start unified transport (single connection, single thread)
+            match ws::start_ws_transport(&url, subscribe_json, tx_elixir) {
+                Ok(sender) => {
+                    // Store sender for send_to_elixir
+                    let _ = WS_SENDER.set(std::sync::Mutex::new(sender));
+                    tui_log("ws: transport started successfully");
+                }
                 Err(e) => {
-                    tui_log(&format!("fd3-reader: read error: {}", e));
-                    break;
+                    tui_log(&format!("ws: transport failed: {}", e));
+                    // Cleanup terminal and exit
+                    terminal::disable_raw_mode()?;
+                    let mut stdout = io::stdout();
+                    execute!(stdout, LeaveAlternateScreen, DisableBracketedPaste, DisableMouseCapture)?;
+                    eprintln!("Failed to connect to daemon: {}", e);
+                    return Ok(());
                 }
             }
         }
-        tui_log(&format!("fd3-reader: exiting after {} lines", line_count));
-        let _ = tx_elixir.send(AppEvent::ElixirClosed);
-    });
+    }
 
     // Thread 2: Read terminal events (crossterm reads from stdin = terminal)
     let tx_term = tx;
@@ -843,12 +902,33 @@ fn char_to_byte_index(s: &str, char_idx: usize) -> usize {
 
 /// Send JSON to Elixir via fd 4 (nouse_stdio output)
 fn send_to_elixir(msg: &OutboundMsg) {
+    // Try WebSocket channel first (daemon mode), fall back to fd 4 (port mode)
+    if let Some(ws_lock) = WS_SENDER.get() {
+        if let Ok(sender) = ws_lock.lock() {
+            let out_msg = match msg {
+                OutboundMsg::Command(cmd) => ws::WsOutbound::Command(cmd.raw.clone()),
+                OutboundMsg::Paste(paste) => ws::WsOutbound::Paste {
+                    content: paste.content.clone(),
+                    line_count: paste.line_count,
+                },
+                _ => {
+                    if let Ok(json) = serde_json::to_string(msg) {
+                        ws::WsOutbound::Raw(json)
+                    } else {
+                        return;
+                    }
+                }
+            };
+            let _ = sender.send(out_msg);
+            return;
+        }
+    }
+
+    // Port mode — write to fd 4
     if let Ok(json) = serde_json::to_string(msg) {
-        // fd 4 = output to Elixir in nouse_stdio mode
         let mut elixir_out = unsafe { std::fs::File::from_raw_fd(4) };
         let _ = writeln!(elixir_out, "{}", json);
         let _ = elixir_out.flush();
-        // Don't drop — from_raw_fd takes ownership and would close fd 4
         std::mem::forget(elixir_out);
     }
 }
@@ -1012,7 +1092,7 @@ fn play_lightning_animation(stdout: &mut io::Stdout) -> io::Result<()> {
     }
 
     // Subtitle
-    let subtitle = "       AI Agent Orchestrator v0.1.0  •  shazam.dev";
+    let subtitle = "       AI Agent Orchestrator v1.2.7  •  shazam.dev";
     execute!(
         stdout,
         MoveTo(0, LOGO.len() as u16 + 2),

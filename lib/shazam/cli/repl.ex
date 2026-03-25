@@ -21,6 +21,84 @@ defmodule Shazam.CLI.Repl do
     end
 
     company_name = config.name
+    workspace = config[:workspace] || File.cwd!()
+
+    # Check if daemon is running — if so, connect via WebSocket instead of booting OTP
+    if Shazam.CLI.Commands.Daemon.daemon_alive?() do
+      start_with_daemon(config, company_name, workspace)
+    else
+      start_inline(config, company_name, workspace, port)
+    end
+  end
+
+  # ── Daemon mode: TUI connects directly via WebSocket ──
+
+  defp start_with_daemon(config, company_name, workspace) do
+    Shazam.FileLogger.init()
+    Shazam.FileLogger.info("REPL started (daemon mode) | company=#{company_name} workspace=#{workspace}")
+
+    daemon_port = Shazam.CLI.Commands.Daemon.daemon_port()
+    ws_url = "ws://127.0.0.1:#{daemon_port}/ws"
+
+    unless Shazam.CLI.TuiPort.available?() do
+      IO.puts("  \e[31mError:\e[0m shazam-tui binary not found.")
+      System.halt(1)
+    end
+
+    Shazam.FileLogger.info("Using Rust TUI (WebSocket mode → #{ws_url})")
+
+    # Launch TUI with --ws flag — it connects directly to the daemon
+    tui_path = Shazam.CLI.TuiPort.Helpers.find_tui_binary()
+
+    # Build subscribe payload for the TUI to send on connect
+    subscribe_json = Jason.encode!(%{
+      company: company_name,
+      workspace: workspace,
+      agents: Enum.map(config.agents, fn a ->
+        %{
+          name: a[:name],
+          role: a[:role],
+          supervisor: a[:supervisor],
+          workspace: a[:workspace],
+          provider: a[:provider],
+          budget: a[:budget],
+          domain: a[:domain]
+        }
+      end),
+      config: %{
+        provider: config[:provider],
+        mission: config[:mission],
+        ralph_config: config[:ralph_config] || %{},
+        domain_config: config[:domain_config] || %{}
+      }
+    })
+
+    # Launch TUI with WebSocket URL and subscribe data
+    port = Port.open({:spawn_executable, tui_path}, [
+      :binary,
+      :exit_status,
+      :nouse_stdio,
+      args: ["--ws", ws_url, "--subscribe", subscribe_json]
+    ])
+
+    Process.flag(:trap_exit, true)
+
+    # Wait for TUI to exit
+    receive do
+      {^port, {:exit_status, _code}} ->
+        IO.puts("\nShazam session ended.")
+        System.halt(0)
+      {:EXIT, _, _} ->
+        IO.puts("\nShazam session ended.")
+        System.halt(0)
+    end
+  end
+
+  # ── Inline mode: boot OTP locally (original behavior) ──
+
+  defp start_inline(config, company_name, workspace, port) do
+    # If daemon is on 4040, use a different port for inline API
+    port = if port_in_use?(port), do: port + 1, else: port
 
     # Boot OTP (lightweight — no company started yet)
     Application.put_env(:shazam, :port, port)
@@ -34,7 +112,6 @@ defmodule Shazam.CLI.Repl do
     Application.ensure_all_started(:shazam)
 
     # Set workspace FIRST (before sync, so task files are found)
-    workspace = config[:workspace] || File.cwd!()
     Application.put_env(:shazam, :workspace, workspace)
     Shazam.Store.save("workspace", %{"path" => workspace})
 
@@ -51,7 +128,7 @@ defmodule Shazam.CLI.Repl do
 
     # Initialize file logger
     Shazam.FileLogger.init()
-    Shazam.FileLogger.info("REPL started | company=#{company_name} workspace=#{workspace}")
+    Shazam.FileLogger.info("REPL started (inline mode) | company=#{company_name} workspace=#{workspace}")
 
     # Require Rust TUI — no fallback
     if Shazam.CLI.TuiPort.available?() do
@@ -99,5 +176,12 @@ defmodule Shazam.CLI.Repl do
 
   defp default_yaml do
     if File.exists?(".shazam/shazam.yaml"), do: ".shazam/shazam.yaml", else: "shazam.yaml"
+  end
+
+  defp port_in_use?(port) do
+    case :gen_tcp.connect(~c"127.0.0.1", port, [], 500) do
+      {:ok, socket} -> :gen_tcp.close(socket); true
+      {:error, _} -> false
+    end
   end
 end
