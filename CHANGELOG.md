@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.1.0 (2026-03-25)
+
+### Features
+- **`shazam daemon reload`** — hot code reload, zero downtime. Reloads all modules in ~50ms without stopping agents or losing state.
+- **Sentry crash reporting** — TUI panics and errors sent to Sentry for observability
+- **TROUBLESHOOTING.md** — comprehensive guide for all known installation and runtime issues
+- **Homebrew PATH check** — setup.sh verifies escript is accessible, warns if not
+
 ## v2.0.0 (2026-03-24)
 
 ### Features

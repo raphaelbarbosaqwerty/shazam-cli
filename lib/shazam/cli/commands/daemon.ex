@@ -32,6 +32,45 @@ defmodule Shazam.CLI.Commands.Daemon do
     end
   end
 
+  def run(["reload" | _]) do
+    if daemon_alive?() do
+      Formatter.info("Hot reloading daemon...")
+
+      Application.ensure_all_started(:inets)
+      Application.ensure_all_started(:ssl)
+
+      url = ~c"http://127.0.0.1:#{@daemon_port}/api/daemon/reload"
+      case :httpc.request(:post, {url, [], ~c"application/json", ~c"{}"}, [timeout: 30_000], []) do
+        {:ok, {{_, 200, _}, _, body}} ->
+          case Jason.decode(to_string(body)) do
+            {:ok, result} ->
+              reloaded = result["reloaded"] || 0
+              skipped = result["skipped"] || 0
+              failed = result["failed"] || 0
+              elapsed = result["elapsed_ms"] || 0
+              IO.puts("")
+              Formatter.success("Hot reload complete!")
+              IO.puts("    Reloaded: #{reloaded} modules")
+              IO.puts("    Skipped: #{skipped}")
+              if failed > 0, do: IO.puts("    \e[31mFailed: #{failed}\e[0m")
+              IO.puts("    Time: #{elapsed}ms")
+              IO.puts("    \e[32mZero downtime — all agents kept running\e[0m")
+              IO.puts("")
+            _ ->
+              Formatter.success("Reload completed")
+          end
+
+        {:ok, {{_, code, _}, _, body}} ->
+          Formatter.error("Reload failed (HTTP #{code}): #{to_string(body)}")
+
+        {:error, reason} ->
+          Formatter.error("Reload failed: #{inspect(reason)}")
+      end
+    else
+      Formatter.error("Daemon is not running")
+    end
+  end
+
   def run(["restart" | _]) do
     if daemon_alive?() do
       stop_daemon()
@@ -53,6 +92,7 @@ defmodule Shazam.CLI.Commands.Daemon do
     IO.puts("    \e[36mshazam daemon stop\e[0m     Stop the running daemon")
     IO.puts("    \e[36mshazam daemon status\e[0m   Show daemon status")
     IO.puts("    \e[36mshazam daemon restart\e[0m  Restart the daemon")
+    IO.puts("    \e[36mshazam daemon reload\e[0m   Hot reload code (zero downtime)")
     IO.puts("")
   end
 

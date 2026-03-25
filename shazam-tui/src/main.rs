@@ -37,6 +37,13 @@ fn main() {
         return;
     }
 
+    // Initialize Sentry for crash reporting
+    let _sentry_guard = sentry::init(("https://1b3fbab3f097b65e9fb8b8c978383c2e@o4505191293779968.ingest.us.sentry.io/4511106667970560", sentry::ClientOptions {
+        release: Some("shazam-tui@2.0.0".into()),
+        environment: Some("production".into()),
+        ..Default::default()
+    }));
+
     // Log any fatal errors so they can be diagnosed
     std::panic::set_hook(Box::new(|info| {
         let msg = format!("PANIC: {}", info);
