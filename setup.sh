@@ -20,11 +20,19 @@ echo -e "${YELLOW}⚡ Shazam — AI Agent Orchestrator${NC}"
 echo -e "${DIM}   https://shazam.dev${NC}"
 echo ""
 
-# ── Ensure cargo is in PATH ───────────────────────────────
+# ── Ensure tools are in PATH ───────────────────────────────
 
 if [ -f "$HOME/.cargo/env" ]; then
   source "$HOME/.cargo/env"
 fi
+
+# Add Homebrew to PATH (needed for escript/elixir on macOS)
+if [ -d "/opt/homebrew/bin" ]; then
+  export PATH="/opt/homebrew/bin:$PATH"
+elif [ -d "/usr/local/bin" ]; then
+  export PATH="/usr/local/bin:$PATH"
+fi
+
 export PATH="$HOME/.cargo/bin:$HOME/bin:$HOME/.local/bin:$PATH"
 
 # ── Clone or update CORE ─────────────────────────────────
@@ -198,6 +206,25 @@ else
   echo -e "    ${GREEN}echo 'export PATH=\"\$HOME/bin:\$PATH\"' >> ${RC_SHORT}${NC}"
   echo -e "    ${GREEN}source ${RC_SHORT}${NC}"
   echo ""
+fi
+
+# Check if Homebrew's bin is in PATH (needed for escript/elixir)
+BREW_OK=false
+if command -v brew &>/dev/null; then
+  BREW_PREFIX="$(brew --prefix)"
+  if echo "$PATH" | tr ':' '\n' | grep -q "^${BREW_PREFIX}/bin$" 2>/dev/null; then
+    BREW_OK=true
+  elif [ -f "$RC_FILE" ] && grep -q "brew" "$RC_FILE" 2>/dev/null; then
+    BREW_OK=true
+  fi
+
+  if [ "$BREW_OK" = false ]; then
+    RC_SHORT="${RC_FILE/#$HOME/\~}"
+    echo -e "${YELLOW}⚠  Homebrew bin not in PATH (needed for escript)${NC}"
+    echo ""
+    echo -e "  Run: ${GREEN}echo 'export PATH=\"\$(brew --prefix)/bin:\$PATH\"' >> ${RC_SHORT} && source ${RC_SHORT}${NC}"
+    echo ""
+  fi
 fi
 
 echo ""
