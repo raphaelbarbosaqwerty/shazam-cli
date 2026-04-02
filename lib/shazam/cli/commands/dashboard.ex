@@ -8,17 +8,97 @@ defmodule Shazam.CLI.Commands.Dashboard do
 
   @port 4040
 
-  def run(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [company: :string, port: :integer])
-    port = opts[:port] || @port
-    company = opts[:company] || Shared.yaml_company()
+  @app_name "Shazam Dashboard"
+  @app_path "/Applications/Shazam Dashboard.app"
 
-    unless company do
-      Formatter.error("No company. Use --company NAME or shazam.yaml")
-      System.halt(1)
+  def run(args) do
+    {opts, _, _} = OptionParser.parse(args, switches: [company: :string, port: :integer, tui: :boolean, install: :boolean])
+
+    cond do
+      opts[:tui] ->
+        # Legacy TUI mode
+        port = opts[:port] || @port
+        company = opts[:company] || Shared.yaml_company()
+        unless company do
+          Formatter.error("No company. Use --company NAME or shazam.yaml")
+          System.halt(1)
+        end
+        dashboard_loop(port, company, [], 0)
+
+      opts[:install] ->
+        install_desktop_app()
+
+      true ->
+        open_desktop_app()
+    end
+  end
+
+  defp open_desktop_app do
+    if File.dir?(@app_path) do
+      IO.puts("Opening #{@app_name}...")
+      System.cmd("open", [@app_path])
+    else
+      IO.puts("#{@app_name} not installed.")
+      IO.puts("")
+      IO.puts("Install with: shazam dashboard --install")
+      IO.puts("Or use TUI:   shazam dashboard --tui")
+    end
+  end
+
+  defp install_desktop_app do
+    IO.puts("\n⚡ Installing #{@app_name}...\n")
+
+    home = System.get_env("HOME") || ""
+    source = find_dashboard_source(home)
+
+    if source do
+      build_and_install(source)
+    else
+      IO.puts("Dashboard source not found.")
+      IO.puts("Clone it first: git clone https://github.com/ShazamAI/shazam-dashboard")
+    end
+  end
+
+  defp find_dashboard_source(home) do
+    [
+      Path.join(home, "Projects/ShazamAI/shazam-dashboard"),
+      Path.join(home, "shazam-dashboard"),
+    ]
+    |> Enum.find(fn p ->
+      File.exists?(Path.join(p, "package.json")) and File.dir?(Path.join(p, "src-tauri"))
+    end)
+  end
+
+  defp build_and_install(path) do
+    IO.puts("  Source: #{path}")
+
+    # Install npm deps if needed
+    unless File.dir?(Path.join(path, "node_modules")) do
+      IO.puts("  Installing npm dependencies...")
+      System.cmd("npm", ["install"], cd: path, into: IO.stream(:stdio, :line))
     end
 
-    dashboard_loop(port, company, [], 0)
+    IO.puts("  Building Tauri app (this may take a few minutes)...")
+
+    cargo_path = "#{System.get_env("HOME")}/.cargo/bin"
+    env = [{"PATH", "#{cargo_path}:#{System.get_env("PATH")}"}]
+
+    case System.cmd("npm", ["run", "tauri", "build"], cd: path, env: env, into: IO.stream(:stdio, :line)) do
+      {_, 0} ->
+        app_bundle = Path.join(path, "src-tauri/target/release/bundle/macos/#{@app_name}.app")
+        if File.dir?(app_bundle) do
+          if File.dir?(@app_path), do: File.rm_rf!(@app_path)
+          {_, 0} = System.cmd("cp", ["-R", app_bundle, @app_path])
+          System.cmd("xattr", ["-cr", @app_path])
+          IO.puts("\n  #{IO.ANSI.green()}✓#{IO.ANSI.reset()} #{@app_name} installed to #{@app_path}")
+          IO.puts("  Open with: shazam dashboard\n")
+        else
+          Formatter.error("Build succeeded but app bundle not found")
+        end
+
+      {_, code} ->
+        Formatter.error("Build failed (exit code #{code})")
+    end
   end
 
   # ── private ───────────────────────────────────────────────

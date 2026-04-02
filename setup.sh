@@ -79,47 +79,34 @@ clone_or_update "$TRAY_REPO" "$TRAY_DIR" "shazam-tray"
 
 echo ""
 
-# ── Detect build strategy ─────────────────────────────────
+# ── Check dependencies ────────────────────────────────────
 
-USE_NIX=false
+check_cmd() {
+  if ! command -v "$1" &> /dev/null; then
+    echo -e "${RED}✗ $1 not found.${NC} $2"
+    return 1
+  else
+    echo -e "${GREEN}✓${NC} $1 found"
+    return 0
+  fi
+}
 
-if command -v nix &> /dev/null; then
-  USE_NIX=true
-  echo -e "${GREEN}✓${NC} Nix detected — using Nix for all dependencies"
-else
-  echo -e "${DIM}Nix not found — checking manual dependencies...${NC}"
+MISSING=0
+check_cmd "elixir" "Install: https://elixir-lang.org/install.html (>= 1.18 required)" || MISSING=1
+if command -v elixir &> /dev/null; then
+  ELIXIR_VER=$(elixir --version 2>/dev/null | grep "Elixir" | sed 's/.*Elixir //' | cut -d. -f1-2)
+  if [ "$(printf '%s\n' "1.18" "$ELIXIR_VER" | sort -V | head -1)" != "1.18" ]; then
+    echo -e "${RED}✗ Elixir $ELIXIR_VER is too old. Version >= 1.18 required.${NC}"
+    MISSING=1
+  fi
+fi
+check_cmd "cargo" "Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" || MISSING=1
+check_cmd "claude" "Install: https://docs.anthropic.com/en/docs/claude-code" || MISSING=1
+
+if [ "$MISSING" -eq 1 ]; then
   echo ""
-
-  check_cmd() {
-    if ! command -v "$1" &> /dev/null; then
-      echo -e "${RED}✗ $1 not found.${NC} $2"
-      return 1
-    else
-      echo -e "${GREEN}✓${NC} $1 found"
-      return 0
-    fi
-  }
-
-  MISSING=0
-  check_cmd "elixir" "Install: https://elixir-lang.org/install.html (>= 1.18 required)" || MISSING=1
-  if command -v elixir &> /dev/null; then
-    ELIXIR_VER=$(elixir --version 2>/dev/null | grep "Elixir" | sed 's/.*Elixir //' | cut -d. -f1-2)
-    if [ "$(printf '%s\n' "1.18" "$ELIXIR_VER" | sort -V | head -1)" != "1.18" ]; then
-      echo -e "${RED}✗ Elixir $ELIXIR_VER is too old. Version >= 1.18 required.${NC}"
-      MISSING=1
-    fi
-  fi
-  check_cmd "cargo" "Install: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh" || MISSING=1
-  check_cmd "claude" "Install: https://docs.anthropic.com/en/docs/claude-code" || MISSING=1
-
-  if [ "$MISSING" -eq 1 ]; then
-    echo ""
-    echo -e "${YELLOW}Tip:${NC} Install Nix to skip manual dependency setup:"
-    echo -e "  ${DIM}curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh${NC}"
-    echo ""
-    echo -e "${RED}Please install missing dependencies and run again.${NC}"
-    exit 1
-  fi
+  echo -e "${RED}Please install missing dependencies and run again.${NC}"
+  exit 1
 fi
 
 echo ""
@@ -128,11 +115,7 @@ echo ""
 
 cd "$CLI_DIR"
 
-if [ "$USE_NIX" = true ]; then
-  echo -e "  Building with Nix..."
-  nix develop --extra-experimental-features "nix-command flakes" --command bash -c "./build.sh"
-else
-  echo "  [1/4] Installing Elixir dependencies..."
+echo "  [1/4] Installing Elixir dependencies..."
   mix local.hex --force --if-missing > /dev/null 2>&1
   mix local.rebar --force --if-missing > /dev/null 2>&1
   mix deps.get --quiet 2>&1
@@ -179,7 +162,6 @@ else
 
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shazam"
   ln -sf "$INSTALL_DIR/shazam-cli" "$INSTALL_DIR/shz"
-fi
 
 # ── PATH check ─────────────────────────────────────────────
 

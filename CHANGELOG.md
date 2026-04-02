@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.2.0 (2026-04-02)
+
+### New Commands
+- **`shazam dashboard`** — opens desktop Tauri app (installs if needed via `--install`)
+- **`shazam dashboard --tui`** — legacy TUI mode preserved
+- **`shazam doctor`** — system health diagnostics (11 checks via daemon API)
+- **`shazam sync`** — sync IDE agent configs (Claude/Gemini/Cursor/Codex)
+
+### Changes
+- Nix support removed (flake.nix deleted, setup.sh simplified)
+- setup.sh no longer suggests Nix installation
+
+### Dependencies
+- claude_code bumped to ~> 0.33
+- telemetry bumped to ~> 1.4
+
 ## v2.1.0 (2026-03-25)
 
 ### Features
@@ -487,8 +503,7 @@ agents:
 - **Agent output events** — tool_use visible, text_delta silenced
 
 ### Infrastructure
-- **Nix flake** — `nix develop` for reproducible dev environment (Elixir 1.18)
-- **setup.sh** — auto-detects Nix, highlighted PATH warning box
+- **setup.sh** — dependency checker, highlighted PATH warning box
 - **`shz` alias** — avoids macOS ShazamKit conflict
 - **`shazam update`** — auto-update command (fetch + rebuild + install)
 - **`shazam` no args** — opens interactive shell directly

@@ -20,7 +20,10 @@ defmodule Shazam.CLI do
     shazam org               Show org chart
     shazam agent add <name>  Add agent to running company
     shazam apply             Apply shazam.yaml changes
-    shazam dashboard         Interactive TUI dashboard
+    shazam dashboard         Open desktop dashboard (installs if needed)
+    shazam dashboard --tui   Interactive TUI dashboard
+    shazam doctor            System health diagnostics
+    shazam sync              Sync IDE configs (Claude/Gemini/Cursor/Codex)
     shazam help              Show this help
   """
 
@@ -40,6 +43,8 @@ defmodule Shazam.CLI do
       ["agent", "add" | rest] -> Shazam.CLI.Commands.AgentAdd.run(rest)
       ["apply" | rest]       -> Shazam.CLI.Commands.Apply.run(rest)
       ["dashboard" | rest]   -> Shazam.CLI.Commands.Dashboard.run(rest)
+      ["doctor" | _]         -> Shazam.CLI.Commands.Doctor.run()
+      ["sync" | rest]        -> Shazam.CLI.Commands.Sync.run(rest)
       ["help" | _]           -> cmd_help()
       ["--help" | _]         -> cmd_help()
       ["-h" | _]             -> cmd_help()
