@@ -118,105 +118,32 @@ defmodule Shazam.CLI do
   # ── update ─────────────────────────────────────────────────
 
   defp cmd_update do
-    # Support both old (~/.shazam-cli) and new (~/.shazam-install/) layout
-    install_dir = Path.expand("~/.shazam-install")
-    cli_dir = Path.join(install_dir, "shazam-cli")
-    core_dir = Path.join(install_dir, "shazam-core")
-    legacy_dir = Path.expand("~/.shazam-cli")
-
-    shazam_dir = cond do
-      File.dir?(cli_dir) -> cli_dir
-      File.dir?(legacy_dir) -> legacy_dir
-      true -> nil
-    end
-
     Formatter.info("Updating Shazam...")
     IO.puts("")
 
-    if shazam_dir do
-      # Update core first if it exists
-      if File.dir?(core_dir) do
-        IO.puts("  Updating shazam-core...")
-        System.cmd("git", ["fetch", "origin", "--tags", "--force"], cd: core_dir, stderr_to_stdout: true)
-        case System.cmd("git", ["describe", "--tags", "--abbrev=0", "origin/main"], cd: core_dir, stderr_to_stdout: true) do
-          {tag, 0} ->
-            tag = String.trim(tag)
-            if tag != "" do
-              System.cmd("git", ["checkout", tag, "--quiet"], cd: core_dir, stderr_to_stdout: true)
-              IO.puts("  shazam-core: #{tag}")
-            end
-          _ -> :ok
-        end
-      end
+    # Find the setup.sh location
+    install_dir = Path.expand("~/.shazam-install")
+    cli_dir = Path.join(install_dir, "shazam-cli")
+    legacy_dir = Path.expand("~/.shazam-cli")
 
-      # Update CLI
-      IO.puts("  Updating shazam-cli...")
-      {_, _} = System.cmd("git", ["fetch", "origin", "--tags", "--force"], cd: shazam_dir, stderr_to_stdout: true)
+    setup_path = cond do
+      File.exists?(Path.join(cli_dir, "setup.sh")) -> Path.join(cli_dir, "setup.sh")
+      File.exists?(Path.join(legacy_dir, "setup.sh")) -> Path.join(legacy_dir, "setup.sh")
+      true -> nil
+    end
 
-      {latest_tag, exit_code} = System.cmd("git", ["describe", "--tags", "--abbrev=0", "origin/main"], cd: shazam_dir, stderr_to_stdout: true)
-      latest_tag = String.trim(latest_tag)
+    if setup_path do
+      # First, pull latest setup.sh
+      setup_dir = Path.dirname(setup_path)
+      IO.puts("  Fetching latest version...")
+      System.cmd("git", ["pull", "origin", "main", "--quiet"], cd: setup_dir, stderr_to_stdout: true)
 
-      if exit_code != 0 or latest_tag == "" do
-        IO.puts("  No tags found. Updating to latest main...")
-        System.cmd("git", ["reset", "--hard", "origin/main"], cd: shazam_dir, stderr_to_stdout: true)
-      else
-        {current_tag, _} = System.cmd("git", ["describe", "--tags", "--exact-match", "HEAD"], cd: shazam_dir, stderr_to_stdout: true)
-        current_tag = String.trim(current_tag)
-
-        if current_tag == latest_tag do
-          Formatter.success("Already up to date! #{latest_tag} (v#{@version})")
-        else
-          IO.puts("  New version available: #{latest_tag} (current: v#{@version}). Updating...")
-          System.cmd("git", ["checkout", latest_tag], cd: shazam_dir, stderr_to_stdout: true)
-          IO.puts("  shazam-cli: #{latest_tag}")
-
-          IO.puts("  Rebuilding...")
-
-          # Use setup.sh-style build: deps.get, cargo build, escript.build, install
-          env = [{"PATH", "#{System.get_env("HOME")}/.cargo/bin:#{System.get_env("HOME")}/bin:#{System.get_env("PATH")}"}]
-
-          IO.puts("    [1/3] Dependencies...")
-          System.cmd("mix", ["deps.get", "--quiet"], cd: shazam_dir, stderr_to_stdout: true, env: env)
-
-          IO.puts("    [2/3] Building TUI...")
-          tui_dir = Path.join(shazam_dir, "shazam-tui")
-          case System.cmd("cargo", ["build", "--release"], cd: tui_dir, stderr_to_stdout: true, env: env) do
-            {_, 0} -> :ok
-            {output, _} ->
-              Formatter.error("TUI build failed:")
-              IO.puts(output)
-          end
-
-          IO.puts("    [3/3] Building escript...")
-          case System.cmd("mix", ["escript.build"], cd: shazam_dir, stderr_to_stdout: true, env: env) do
-            {_, 0} ->
-              # Install binaries
-              bin_dir = Path.expand("~/bin")
-              File.mkdir_p!(bin_dir)
-              File.cp(Path.join(shazam_dir, "shazam-cli"), Path.join(bin_dir, "shazam-cli"))
-              File.chmod(Path.join(bin_dir, "shazam-cli"), 0o755)
-              File.cp(Path.join(tui_dir, "target/release/shazam-tui"), Path.join(bin_dir, "shazam-tui"))
-              File.chmod(Path.join(bin_dir, "shazam-tui"), 0o755)
-              # Symlinks
-              File.rm(Path.join(bin_dir, "shazam"))
-              File.ln_s(Path.join(bin_dir, "shazam-cli"), Path.join(bin_dir, "shazam"))
-              File.rm(Path.join(bin_dir, "shz"))
-              File.ln_s(Path.join(bin_dir, "shazam-cli"), Path.join(bin_dir, "shz"))
-
-              IO.puts("")
-              Formatter.success("Shazam updated to #{latest_tag}!")
-              Formatter.dim("Restart your shell session to use the new version.")
-
-            {output, _code} ->
-              IO.puts("")
-              Formatter.error("Build failed:")
-              IO.puts(output)
-          end
-        end
-      end
+      # Run setup.sh which handles everything: CLI, core, TUI, tray, dashboard
+      IO.puts("  Running installer...\n")
+      System.cmd("bash", [setup_path], into: IO.stream(:stdio, :line), stderr_to_stdout: true)
     else
       IO.puts("  Shazam was not installed via setup.sh.")
-      IO.puts("  Run the installer to set up auto-update:")
+      IO.puts("  Run the installer:")
       IO.puts("")
       IO.puts("  \e[36mcurl -fsSL https://raw.githubusercontent.com/raphaelbarbosaqwerty/shazam-cli/main/setup.sh | bash\e[0m")
     end
